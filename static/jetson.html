@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jetson - Overflow Robotics</title>
+<link rel="stylesheet" href="common.css">
+<style>
+/* styles for this page only go here (colors and the top bar come from common.css) */
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar"><h1 class="brand">Overflow Robotics</h1><nav class="nav" id="nav" aria-label="Pages"></nav></header>
+  <main class="page">
+    <h2 id="title"></h2>
+    <p class="dim" id="blurb"></p>
+    <p class="dim">Not designed yet.</p>
+    <p class="dim" id="check"></p>
+  </main>
+</div>
+
+<script src="common.js"></script>
+<script src="backend.js"></script>
+<script>
+buildNav();
+const me = PAGES.find((p) => p.href === location.pathname.split("/").pop());
+if (me) { $("title").textContent = me.name; $("blurb").textContent = me.blurb; }
+
+/* proof that this page uses the same backend interface as the dashboard (delete when the page is designed) */
+function check() {
+  const d = backend.get_data();
+  $("check").textContent = "Backend check: " + (d.connected ? `Cube connected, ${d.armed ? "armed" : "disarmed"}, ${d.mode}` : "no Cube link");
+}
+setInterval(check, 500); check();
+</script>
+</body>
+</html>

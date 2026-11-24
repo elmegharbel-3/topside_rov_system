@@ -1,0 +1,43 @@
+{
+  "_help": "Edit the values, save, and restart app.py. Anything you leave out uses the default. Values marked CHECK are guesses: replace them with yours.",
+
+  "cube": {
+    "connection": "COM8",
+    "_connection_help": "CHECK. A serial port ('COM8' on Windows, '/dev/ttyACM0' on Linux) or a network address like 'udpin:0.0.0.0:14550'.",
+    "baud": 115200,
+    "retry_s": 2,
+    "lost_s": 5
+  },
+
+  "joystick": {
+    "rate_hz": 50,
+    "disarm_without_joystick": true,
+    "_disarm_help": "true = while no joystick is plugged in the vehicle is kept disarmed (safety). Set false only for bench tests without a joystick."
+  },
+
+  "web": {
+    "host": "0.0.0.0",
+    "_host_help": "0.0.0.0 = other computers on the network can open the dashboard too. 127.0.0.1 = only this computer.",
+    "port": 5000
+  },
+
+  "jetson": {
+    "host": "192.168.2.2",
+    "port": 22,
+    "user": "jetson",
+    "password": "",
+    "key_file": "",
+    "_login_help": "CHECK all five. Use a password OR a key_file (path to your private key). Leave the other one empty.",
+
+    "start_cmd": "nohup python3 ~/stream_cameras.py > ~/stream_cameras.log 2>&1 &",
+    "stop_cmd": "pkill -f stream_cameras.py",
+    "check_cmd": "pgrep -f stream_cameras.py",
+    "_cmd_help": "CHECK. start_cmd must return at once (the nohup ... & part keeps the script alive if the SSH link drops). check_cmd must exit with 0 when the script is running.",
+
+    "temps_cmd": "for z in /sys/devices/virtual/thermal/thermal_zone*; do echo \"$(cat $z/type) $(cat $z/temp)\"; done",
+    "_temps_help": "Prints lines like 'CPU-therm 41500' (millidegrees). The line with CPU gives the CPU temperature, the line with GPU gives the GPU temperature. Empty string = do not read temperatures.",
+
+    "poll_s": 3,
+    "connect_timeout_s": 6
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "_help": "Edit the values, save, and restart the program. Anything you leave out uses the default.",
+
+  "control_rate_hz": 30,
+  "neutral_timeout_s": 0.5,
+  "stale_after_s": 2.0,
+  "link_timeout_s": 3.0,
+  "mode_confirm_timeout_s": 3.0,
+
+  "send_roll": true,
+  "sync_relays_on_connect": true,
+  "disarm_on_link_loss": true,
+
+  "depth_source": "vfr_hud",
+  "bar30_message": 2,
+  "water_density": 997,
+
+  "allowed_modes": ["MANUAL", "STABILIZE", "ALT_HOLD", "SURFACE"],
+
+  "telemetry_rates_hz": {
+    "ATTITUDE": 40,
+    "VFR_HUD": 5,
+    "AHRS2": 5,
+    "SCALED_PRESSURE": 1,
+    "SCALED_PRESSURE2": 2,
+    "SCALED_PRESSURE3": 1,
+    "SCALED_IMU": 10,
+    "SCALED_IMU2": 10,
+    "SYS_STATUS": 2,
+    "SERVO_OUTPUT_RAW": 5,
+    "RC_CHANNELS": 5
+  }
+}

@@ -1,0 +1,4 @@
+flask
+pygame
+pymavlink>=2.4.45
+paramiko

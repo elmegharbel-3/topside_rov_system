@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard - Overflow Robotics</title>
+<link rel="stylesheet" href="common.css">
+<style>
+/* ===================================================================
+   DASHBOARD LAYOUT (the shared look, colors and top bar are in common.css)
+   =================================================================== */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(420px, 26vw, 500px); gap: var(--gap); min-height: 0; }
+
+/* right panel */
+.side { background: var(--transp-bg); border-radius: var(--radius); padding: 14px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+.side > * { flex: none; }
+.side .log { flex: 1 1 90px; min-height: 90px; margin-top: 12px; }
+
+/* ===================================================================
+   STEP 8: JETSON PANEL (under the Cube log): SSH connection, camera script, its own log
+   =================================================================== */
+.jetson { margin-top: 10px; display: grid; gap: 6px; }
+.jrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 28px; }
+.side .log.jlog { flex: none; height: 76px; min-height: 0; margin-top: 0; }
+
+/* ===================================================================
+   STEP 2: CAMERAS
+   Two views of the same four pictures:
+     .grid  = 2x2, the normal view
+     .focus = one big picture (about 75% of the height) with the other three small below it
+   =================================================================== */
+.cams { display: grid; gap: var(--gap); min-height: 0; }
+.cams.grid  { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); }
+.cams.focus { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) 24%; }
+
+.slot { position: relative; background: var(--transp-bg); border-radius: var(--radius); overflow: hidden; min-height: 0; min-width: 0; cursor: pointer; }
+.slot:hover { outline: 2px solid var(--text); outline-offset: -2px; }
+.slot.focused:hover { outline-color: var(--line); }
+.slot canvas, .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--transp-bg); }
+.slot img { display: none; }
+
+/* the dropdown: small, and only visible while the mouse is over the picture (or it has keyboard focus) */
+.slot .src { position: absolute; left: 6px; top: 6px; z-index: 3; max-width: calc(100% - 12px);
+  font-size: 11px; padding: 1px 3px; background: var(--scrim); border: 1px solid var(--line); cursor: pointer;
+  opacity: 0; transition: opacity .12s; }
+.slot:hover .src, .slot:focus-within .src { opacity: 1; }
+@media (hover: none) { .slot .src { opacity: 1; } }      /* touch screens have no hover */
+
+.slot .hint { position: absolute; left: 6px; bottom: 6px; z-index: 2; padding: 1px 5px; background: var(--scrim); color: var(--dim); font-size: 11px; opacity: 0; transition: opacity .12s; pointer-events: none; }
+.slot:hover .hint { opacity: 1; }
+.slot .msg { position: absolute; inset: 0; z-index: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 4px; background: var(--box); color: var(--dim); text-align: center; padding: 8px; }
+.slot .msg b { color: var(--text); font-size: 15px; font-weight: 600; }
+.slot.nosignal .msg, .slot.off .msg { display: flex; }
+
+
+/* ===================================================================
+   STEP 3: ARM AND MODE ROW (top of the right panel)
+   =================================================================== */
+.controls { display: flex; flex-wrap: nowrap; gap: 8px; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--line);
+  font-size: clamp(11px, 0.64vw, 13px); }          /* the whole row (button, status, list, current mode) scales with this one size */
+.field { display: grid; gap: 4px; min-width: 0; }
+.field > .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* hidden for the eye, still read by screen readers */
+.value { min-height: 32px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.value.stack { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; }
+.value small { font-size: 0.85em; color: var(--amber); line-height: 1.15; }
+.f-arm { flex: none; }
+.f-status { flex: none; width: calc(5.6em + 16px); }
+.f-select { flex: none; }
+.f-mode { flex: 1 1 0; }
+.armbtn { position: relative; border-radius: var(--radius-sm); width: 9.6em; font-size: 1em; height: 32px; padding: 0 4px; background: var(--box-dark); border: 1px solid var(--text); cursor: pointer; overflow: hidden; user-select: none; touch-action: none; white-space: nowrap; }
+.armbtn::after { content: ""; position: absolute; left: 0; bottom: 0; height: 5px; width: calc(var(--p, 0) * 100%); background: var(--amber); }
+.armbtn.is-armed { border-color: var(--alert); }
+.armbtn.is-armed::after { background: var(--alert); }
+.armbtn:disabled { opacity: .45; cursor: not-allowed; border-color: var(--line); }
+.dot.armed { background: var(--amber); border-color: var(--amber); }
+.modesel { height: 32px; border-radius: var(--radius-sm); width: calc(6.6em + 28px); font-size: 1em; padding: 0 2px; background: var(--box-dark); border: 1px solid var(--line); cursor: pointer; }
+.modesel:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ===================================================================
+   STEP 4: ATTITUDE (roll, pitch, yaw as vehicle drawings, compact size)
+   =================================================================== */
+.temps { display: flex; justify-content: center; gap: clamp(10px, 1.2vw, 22px); margin-top: 10px; white-space: nowrap; font-size: clamp(12px, 0.9vw, 14px); }
+.temp { display: flex; gap: 6px; align-items: baseline; }
+.temp .k { color: var(--dim); }
+.temp .v.none { color: var(--dim); }
+.sentrow { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 12px; }
+.sent { display: grid; grid-template-columns: repeat(5, 1fr); flex: 0 1 310px; text-align: center; row-gap: 2px; }
+.sent .k { color: var(--dim); }
+.sent.off .v, .sent.none .v { color: var(--dim); }
+.joybtn { flex: none; border-radius: var(--radius-sm); height: 24px; padding: 0 8px; font-size: 11px; background: var(--box-dark); border: 1px solid var(--line); cursor: pointer; }
+.joybtn.is-off { border-color: var(--alert); color: var(--alert); }
+.joybtn:disabled { opacity: .45; cursor: not-allowed; }
+.motors { display: block; width: 100%; max-width: 480px; margin: 10px auto 0; aspect-ratio: 480 / 132; }
+.attitude { display: block; width: 100%; max-width: 480px; margin: 12px auto 0; aspect-ratio: 480 / 96; }
+
+
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; }
+  .cams { height: 80vh; }
+}
+</style>
+</head>
+<body>
+<header class="topbar"><nav class="nav" id="nav" aria-label="Pages"></nav><h1 class="brand">Overflow Robotics</h1></header>
+<div class="app">
+  <div class="layout">
+    <section class="cams grid" id="cams" aria-label="Cameras"></section>
+    <aside class="side">
+      <div class="controls">
+        <div class="field f-arm"><span class="label">Arm</span><button class="armbtn" id="armBtn" type="button"></button></div>
+        <div class="field f-status"><span class="label">Arm status</span><div class="value" id="armStatus">---</div></div>
+        <div class="field f-select"><span class="label">Select mode</span><select class="modesel" id="modeSel" aria-label="Request a mode"></select></div>
+        <div class="field f-mode"><span class="label">Current mode</span><div class="value stack" id="modeNow">---</div></div>
+      </div>
+      <canvas class="attitude" id="attitude" width="480" height="96" role="img" aria-label="Attitude and depth"></canvas>
+      <div class="temps" aria-label="Temperatures">
+        <div class="temp"><span class="k">Water</span><span class="v" id="tWater">---</span></div>
+        <div class="temp"><span class="k">Jetson CPU</span><span class="v" id="tCpu">none</span></div>
+        <div class="temp"><span class="k">Jetson GPU</span><span class="v" id="tGpu">none</span></div>
+      </div>
+      <div class="sentrow">
+      <span class="dot" id="joyDot"></span>
+      <div class="sent" id="sent" title="Sent to the Cube, from -1 to 1">
+        <span class="k">surge</span><span class="k">sway</span><span class="k">heave</span><span class="k">yaw</span><span class="k">roll</span>
+        <span class="v">---</span><span class="v">---</span><span class="v">---</span><span class="v">---</span><span class="v">---</span>
+      </div>
+      <button class="joybtn" id="joyBtn" type="button">Disable joystick</button>
+      </div>
+      <canvas class="motors" id="motors" width="480" height="132" role="img" aria-label="Motor outputs"></canvas>
+      <div class="log" id="log" role="log" aria-live="polite" aria-label="Cube log"><div class="none">No messages yet</div></div>
+      <section class="jetson" aria-label="Jetson Nano">
+        <div class="jrow">
+          <button class="jbtn" id="jConn" type="button">Connect to Jetson</button>
+          <span class="jstate"><span class="dot" id="jDot"></span><span id="jConnText" aria-live="polite">Disconnected</span></span>
+        </div>
+        <div class="jrow">
+          <button class="jbtn" id="jStart" type="button" disabled>Start cameras</button>
+          <button class="jbtn" id="jStop" type="button" disabled>Stop cameras</button>
+          <span class="jstate"><span class="dot" id="jCamDot"></span><span id="jCamText" aria-live="polite">Cameras: unknown</span></span>
+        </div>
+        <div class="log jlog" id="jlog" role="log" aria-live="polite" aria-label="Jetson log"><div class="none">No Jetson messages yet</div></div>
+      </section>
+    </aside>
+  </div>
+</div>
+<script src="common.js"></script>
+<script src="backend.js"></script>
+<script>
+buildNav();         
+
+// canvas colors come from the CSS variables (so a theme file changes them too)
+const ATT = {};
+const FONT_MONO = "monospace";
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n) => cs.getPropertyValue(n).trim();
+  const num = (n, d) => { const x = parseFloat(v(n)); return isNaN(x) ? d : x; };
+  ATT.cam = { hue: num("--cam-hue", 190), step: num("--cam-step", 70), sat: num("--cam-sat", 18), lit: num("--cam-lit", 14) };
+  Object.assign(ATT, { line: v("--c-line"), text: v("--text"), dim: v("--dim"), alert: v("--alert"), amber: v("--amber"), bg: v("--c-bg"), frame: v("--c-frame"), tube: v("--c-tube"), dark: v("--c-dark"), font: v("--font") });
+}
+readTheme();
+
+/* ===================================================================
+   CAMERA STATE
+   slots[i]  = which camera box i shows: a source number (index of SOURCES) or null (= switched off).
+               Boxes 0..3 are the four positions of the 2x2 grid (top-left, top-right, bottom-left, bottom-right).
+   focus     = null (2x2 grid) or the box number that is enlarged. Not remembered: the page always starts as a grid.
+   Rule: a source is shown in at most one box. Picking a source that is shown elsewhere swaps the two boxes.
+   =================================================================== */
+let slots = [0, 1, 2, 3].map((i) => (i < SOURCES.length ? i : null));
+let focus = null;
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  const shown = (saved || []).filter((v) => v !== null);
+  if (Array.isArray(saved) && saved.length === 4 &&
+      saved.every((v) => v === null || (Number.isInteger(v) && v >= 0 && v < SOURCES.length)) &&
+      new Set(shown).size === shown.length) slots = saved;
+} catch (e) { /* storage not available: keep the default */ }
+const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(slots)); } catch (e) {} };
+
+function assign(box, source) {               // source = number or null
+  if (source !== null) {
+    const other = slots.indexOf(source);
+    if (other !== -1 && other !== box) slots[other] = slots[box];     // swap with the box that had it
+  }
+  slots[box] = source;
+  save(); render();
+}
+function toggleFocus(box) {                  // grid -> enlarge this one; thumbnail -> switch to it; the big one -> back to grid
+  focus = focus === box ? null : box;
+  render();
+}
+function showGrid() { if (focus !== null) { focus = null; render(); } }
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") showGrid(); });
+
+/* ===================================================================
+   BUILD THE FOUR BOXES (once)
+   =================================================================== */
+const boxes = [];
+for (let i = 0; i < 4; i++) {
+  const el = document.createElement("figure");
+  el.className = "slot";
+  el.tabIndex = 0;
+  el.setAttribute("role", "button");
+  el.innerHTML = `
+    <canvas width="640" height="360"></canvas><img alt="">
+    <select class="src" aria-label="Camera source for this view"></select>
+    <div class="msg"><b></b><span></span></div>
+    <span class="hint"></span>`;
+  $("cams").appendChild(el);
+
+  const sel = el.querySelector("select");
+  sel.innerHTML = '<option value="off">Off</option>' + SOURCES.map((s, n) => `<option value="${n}">${s.name}</option>`).join("");
+  sel.onchange = () => assign(i, sel.value === "off" ? null : Number(sel.value));
+  sel.onclick = (e) => e.stopPropagation();               // using the dropdown must not count as a click on the picture
+  sel.onkeydown = (e) => e.stopPropagation();             // so Space/Enter/Esc inside the list do their normal job
+  el.onclick = () => toggleFocus(i);
+  el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); toggleFocus(i); } };
+
+  const box = { el, sel, hint: el.querySelector(".hint"), canvas: el.querySelector("canvas"), img: el.querySelector("img"),
+                msgTitle: el.querySelector(".msg b"), msgText: el.querySelector(".msg span"), url: null, timer: 0, sourceIndex: null };
+  box.img.onload = () => { el.classList.remove("nosignal"); box.img.style.display = "block"; };
+  box.img.onerror = () => {
+    if (!box.url) return;
+    el.classList.add("nosignal"); box.img.style.display = "none";
+    clearTimeout(box.timer);
+    box.timer = setTimeout(() => connect(box, box.url), RETRY_MS);          // keep trying
+  };
+  boxes.push(box);
+}
+
+/* start (or restart) a stream; a new ?t= value stops the browser from reusing a dead connection */
+function connect(box, url) {
+  box.img.src = url + (url.includes("?") ? "&" : "?") + "t=" + Date.now();
+}
+
+/* ===================================================================
+   DRAW: update the layout and every box from `slots` and `focus`
+   =================================================================== */
+function render() {
+  $("cams").className = "cams " + (focus === null ? "grid" : "focus");
+  boxes.forEach((box, i) => {
+    // layout: in the focus view the chosen box spans the whole top row, the others sit in the bottom row
+    const focused = focus === i;
+    box.el.classList.toggle("focused", focused);
+    box.el.style.gridColumn = focus === null ? "" : focused ? "1 / 4" : "auto";
+    box.el.style.gridRow = focus === null ? "" : focused ? "1" : "2";
+    box.hint.textContent = focus === null ? "Click to enlarge" : focused ? "Click to return to the grid" : "Click to switch to this camera";
+    box.el.setAttribute("aria-label", box.hint.textContent);
+
+    // content
+    const source = slots[i], src = source === null ? null : SOURCES[source];
+    box.sel.value = source === null ? "off" : String(source);
+    box.el.classList.toggle("off", source === null);
+    const url = src ? src.url : null;
+    if (box.url !== url) {                                    // the stream for this box changed
+      box.url = url; clearTimeout(box.timer);
+      box.el.classList.remove("nosignal"); box.img.style.display = "none";
+      if (url) connect(box, url); else box.img.removeAttribute("src");     // removing src closes the connection
+    }
+    box.msgTitle.textContent = source === null ? "Off" : "No signal";
+    box.msgText.textContent = source === null ? "Hover and pick a camera" : src.name;
+    box.sourceIndex = source;
+  });
+  paintPlaceholders(performance.now() / 1000);                // redraw at once so a swap shows immediately
+}
+
+/* ===================================================================
+   PLACEHOLDER PICTURES (only for sources with url: null)
+   Each camera gets its own colour so you can see swaps happening.
+   =================================================================== */
+function paintPlaceholders(t) {
+  boxes.forEach((box) => {
+    if (box.url || box.sourceIndex === null) return;
+    const g = box.canvas.getContext("2d"), w = box.canvas.width, h = box.canvas.height, n = box.sourceIndex;
+    const C = ATT.cam, hue = C.hue + n * C.step;
+    g.fillStyle = `hsl(${hue} ${C.sat}% ${C.lit}%)`; g.fillRect(0, 0, w, h);
+    g.strokeStyle = `hsl(${hue} ${C.sat + 12}% 40% / .35)`; g.lineWidth = 2;
+    for (let k = 0; k < 8; k++) {
+      g.beginPath();
+      for (let x = 0; x <= w; x += 12) {
+        const y = 25 + k * 42 + 9 * Math.sin(x / 60 + t * 0.6 + k + n);
+        x ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+      g.stroke();
+    }
+    g.fillStyle = "rgba(255,255,255,.18)"; g.font = `bold 64px ${ATT.font || FONT_MONO}`; g.textAlign = "center";
+    g.fillText(String(n + 1), w / 2, h / 2 + 22);
+  });
+}
+render();
+if (!reduceMotion) setInterval(() => paintPlaceholders(performance.now() / 1000), 120);
+
+/* ===================================================================
+   ARM BUTTON: hold 2 seconds
+   - the label always follows the REAL armed state (arm when disarmed, disarm when armed)
+   - the target is fixed when the hold starts; if the real state changes during the hold
+     (e.g. you armed with the joystick), the hold is cancelled so it can never toggle twice
+   =================================================================== */
+const HOLD_MS = 2000;
+$("armBtn").title = `Hold for ${HOLD_MS / 1000} seconds`;
+const PENDING_TIMEOUT_MS = 4000;             // stop showing "Arming..." if the Cube never confirms
+let armPending = null;                       // { target: true|false, since: ms } while a command is on its way
+
+function requestArm(target) {
+  armPending = { target, since: performance.now() };
+  if (!(target ? backend.arm() : backend.disarm())) armPending = null;
+}
+(function () {
+  const btn = $("armBtn");
+  let raf = 0, t0 = 0, startArmed = null;
+  const stop = () => { cancelAnimationFrame(raf); t0 = 0; startArmed = null; btn.style.setProperty("--p", 0); };
+  function start() {
+    if (btn.disabled || t0) return;
+    const armed = backend.get_data().armed;
+    if (armed === null) return;
+    t0 = performance.now(); startArmed = armed;
+    const step = () => {
+      if (backend.get_data().armed !== startArmed) { stop(); return; }              // state changed meanwhile: cancel
+      const p = Math.min(1, (performance.now() - t0) / HOLD_MS);
+      btn.style.setProperty("--p", p);
+      if (p >= 1) { const target = !startArmed; stop(); requestArm(target); }
+      else raf = requestAnimationFrame(step);
+    };
+    step();
+  }
+  btn.addEventListener("pointerdown", start);
+  ["pointerup", "pointercancel", "pointerleave", "blur", "keyup"].forEach((e) => btn.addEventListener(e, stop));
+  btn.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); start(); } });
+})();
+
+/* ===================================================================
+   MODE: pick from the list = REQUEST only. The "Current mode" field always shows what the Cube reports.
+   =================================================================== */
+$("modeSel").innerHTML = '<option value="" selected disabled>Select mode</option>' + MODES.map((m) => `<option>${m}</option>`).join("");
+$("modeSel").onchange = (e) => { backend.set_mode(e.target.value); e.target.value = ""; };   // back to "Select mode" after asking
+
+/* ===================================================================
+   DRAW THE ROW (10 times a second)
+   =================================================================== */
+function drawControls() {
+  const d = backend.get_data(), link = d.connected, now = performance.now();
+  if (armPending && (!link || d.armed === armPending.target || now - armPending.since > PENDING_TIMEOUT_MS)) armPending = null;
+
+  const btn = $("armBtn");
+  btn.disabled = !link || armPending !== null;
+  btn.classList.toggle("is-armed", d.armed === true);
+  btn.textContent = !link ? "Arm (no link)" : armPending ? (armPending.target ? "Arming..." : "Disarming...")
+                  : d.armed ? "Hold to disarm" : "Hold to arm";
+
+  $("armStatus").innerHTML = !link ? "---" : armPending
+    ? `<span class="dot wait"></span>${armPending.target ? "Arming" : "Disarming"}`
+    : d.armed ? '<span class="dot armed"></span>Armed' : '<span class="dot"></span>Disarmed';
+
+  $("modeSel").disabled = !link;
+  $("modeNow").innerHTML = !link ? "---" : d.mode + (d.mode_request ? `<small title="Mode requested, waiting for the Cube to confirm">→ ${d.mode_request}...</small>` : "");
+}
+setInterval(drawControls, 100);
+drawControls();
+
+/* TEMPERATURES: water (Cube) and the Jetson's CPU / GPU. "none" = the Jetson isn't sending data. */
+function drawTemps() {
+  const d = backend.get_data();
+  const show = (id, v, none) => { const el = $(id); el.textContent = v == null ? none : v.toFixed(1) + " °C"; el.classList.toggle("none", v == null); };
+  show("tWater", d.water_temp_c, "---"); show("tCpu", d.jetson_cpu_c, "none"); show("tGpu", d.jetson_gpu_c, "none");
+}
+setInterval(drawTemps, 500);
+drawTemps();
+
+/* SENT VALUES: what the joystick is sending to the Cube, (surge, sway, heave, yaw, roll), each -1 to 1 */
+function drawSent() {
+  const d = backend.get_data(), s = d.sent, box = $("sent"), vals = box.querySelectorAll(".v");
+  box.classList.toggle("none", !s);
+  const jc = d.joystick_connected;                                     // true = plugged in, false = unplugged, null = unknown
+  box.classList.toggle("off", d.joystick_enabled === false || jc === false);
+  const dot = $("joyDot");
+  dot.className = "dot " + (jc === true ? "on" : jc === false ? "bad" : "");
+  dot.title = jc === true ? "Joystick connected" : jc === false ? "Joystick NOT connected: zeros are sent and the vehicle is disarmed" : "Joystick: no data";
+  vals.forEach((el, i) => { el.textContent = s ? (Math.round(s[i] * 10) / 10 + 0).toFixed(1) : "---"; });
+  const btn = $("joyBtn"), off = d.joystick_enabled === false;
+  btn.textContent = off ? "Enable joystick" : "Disable joystick";
+  btn.classList.toggle("is-off", off);
+}
+$("joyBtn").onclick = () => backend.set_joystick_enabled(backend.get_data().joystick_enabled === false);
+setInterval(drawSent, 100);
+drawSent();
+
+
+
+/* ===================================================================
+   STEP 4: ATTITUDE + DEPTH DISPLAY (one canvas, one row)
+   Three circles, each showing the same vehicle from a different side:
+     rear view = roll, side view = pitch, top view with a turning compass = yaw.
+   Sizes: ATT_RADIUS is the circle radius in canvas pixels (the canvas is 480 wide and scales with the panel).
+   The picture glides between the 10 Hz updates of the Cube (smoothing), and always takes the short way round.
+   =================================================================== */
+const ATT_RADIUS = 34;
+const TILT_WARN = 35, TILT_ALERT = 60;       // degrees of roll or pitch: amber from TILT_WARN, red from TILT_ALERT (a 3 degree margin stops flicker at the limit)
+
+const rad = (d) => d * Math.PI / 180;
+const wrap360 = (v) => ((v % 360) + 360) % 360;
+const angDiff = (to, from) => ((to - from + 540) % 360) - 180;
+const sgnDeg = (v) => (v >= 0 ? "+" : "-") + Math.abs(Math.round(v)) + "°";
+
+function aText(g, s, x, y, size, color, bold) { g.font = `${bold ? "bold " : ""}${size}px ${ATT.font || FONT_MONO}`; g.fillStyle = color; g.textAlign = "center"; g.fillText(s, x, y); }
+function aRing(g, cx, cy, r, color = ATT.line, w = 1.5) { g.strokeStyle = color; g.lineWidth = w; g.beginPath(); g.arc(cx, cy, r, 0, 7); g.stroke(); }
+function aTicks(g, r, step, len) {
+  g.strokeStyle = ATT.line; g.lineWidth = 1.5;
+  for (let t = 0; t < 360; t += step) { const x = Math.sin(rad(t)), y = -Math.cos(rad(t)); g.beginPath(); g.moveTo(x * (r - len), y * (r - len)); g.lineTo(x * r, y * r); g.stroke(); }
+}
+function aRound(g, x, y, w, h, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
+function aPart(g, x, y, w, h, r, fill) { g.fillStyle = fill; g.strokeStyle = ATT.text; g.lineWidth = 2; aRound(g, x, y, w, h, r); g.fill(); g.stroke(); }
+function aDisc(g, x, y, r, fill, stroke = ATT.text) { g.fillStyle = fill; g.strokeStyle = stroke; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.stroke(); }
+
+/* the vehicle, drawn at a nominal size (about 100 px wide) and scaled down by the caller */
+function rearView(g) {                                   // from behind: wide and round
+  aPart(g, -46, 9, 92, 7, 3, ATT.frame);
+  aDisc(g, -46, -1, 10, ATT.dark); aDisc(g, -46, -1, 4, ATT.frame);
+  aDisc(g, 46, -1, 10, ATT.dark); aDisc(g, 46, -1, 4, ATT.frame);
+  aPart(g, -32, -26, 13, 15, 3, ATT.dark); aPart(g, 19, -26, 13, 15, 3, ATT.dark);
+  aDisc(g, 0, -2, 17, ATT.tube); aDisc(g, 0, -2, 8, ATT.frame);
+  g.fillStyle = ATT.amber; g.fillRect(-4, -31, 8, 4);
+}
+function sideView(g) {                                   // from the right side, nose to the right: long and low
+  aPart(g, -40, 8, 82, 6, 3, ATT.frame);
+  aPart(g, -44, -9, 88, 19, 9.5, ATT.tube);
+  aPart(g, -6, -27, 15, 16, 3, ATT.dark);
+  aPart(g, -54, -8, 12, 16, 3, ATT.dark);
+  aDisc(g, 40, 0, 4.5, ATT.amber, ATT.amber);
+}
+function topView(g) {                                    // from above: square frame, angled corner thrusters
+  g.strokeStyle = ATT.text; g.lineWidth = 2; aRound(g, -27, -23, 54, 46, 4); g.stroke();
+  [[-27, -23, 1], [27, -23, -1], [-27, 23, -1], [27, 23, 1]].forEach(([x, y, d]) => { g.save(); g.translate(x, y); g.rotate(d * Math.PI / 4); aPart(g, -4, -11, 8, 22, 3, ATT.dark); g.restore(); });
+  aPart(g, -10, -31, 20, 58, 10, ATT.tube);
+  aDisc(g, 0, -29, 4.5, ATT.amber, ATT.amber);
+}
+
+const attCanvas = $("attitude"), attCtx = attCanvas.getContext("2d");
+const ATT_W = 480, ATT_H = 96, attDpr = Math.min(window.devicePixelRatio || 1, 2);
+attCanvas.width = ATT_W * attDpr; attCanvas.height = ATT_H * attDpr; attCtx.scale(attDpr, attDpr);
+const attShown = { roll: 0, pitch: 0, yaw: 0, depth: 0 };   // what is on the screen right now
+let attTarget = null;                                    // attitude the Cube last reported (null = no data)
+let depthTarget = null;                                  // depth the Cube last reported (null = no data)
+let attLabel = "";
+const tiltLevel = { roll: 0, pitch: 0 };                 // 0 normal, 1 amber, 2 red
+
+function levelOf(prev, v) {                              // with a small margin going back down, so the colour doesn't flicker at the limit
+  const a = Math.abs(v);
+  if (a >= TILT_ALERT || (prev === 2 && a >= TILT_ALERT - 3)) return 2;
+  if (a >= TILT_WARN || (prev >= 1 && a >= TILT_WARN - 3)) return 1;
+  return 0;
+}
+const levelColor = (l) => (l === 2 ? ATT.alert : l === 1 ? ATT.amber : null);
+
+function drawDepth(g, cx, cy, r) {                       // a fourth circle like the others: just the value
+  const has = depthTarget !== null, d = has ? Math.max(0, attShown.depth) : 0;
+  g.globalAlpha = has ? 1 : 0.3; aRing(g, cx, cy, r); g.globalAlpha = 1;
+  aText(g, has ? d.toFixed(1) : "---", cx, cy + 7, 22, has ? ATT.text : ATT.dim, true);
+  if (has) aText(g, "m", cx, cy + 22, 11, ATT.dim);
+}
+
+function drawAttitude() {
+  const g = attCtx, r = ATT_RADIUS, K = r / 68, y0 = r + 4, gap = r * 2 + 20, x0 = (ATT_W - (3 * gap + 2 * r)) / 2 + r, xs = [x0, x0 + gap, x0 + 2 * gap];
+  const has = attTarget !== null, a = has ? attShown : { roll: 0, pitch: 0, yaw: 0 };
+  if (has) { tiltLevel.roll = levelOf(tiltLevel.roll, a.roll); tiltLevel.pitch = levelOf(tiltLevel.pitch, a.pitch); } else { tiltLevel.roll = tiltLevel.pitch = 0; }
+  const cr = levelColor(tiltLevel.roll), cp = levelColor(tiltLevel.pitch);
+  g.clearRect(0, 0, ATT_W, ATT_H);
+  g.globalAlpha = has ? 1 : 0.3;                          // no data: the figures stay level and faded, the numbers show ---
+  aRing(g, xs[0], y0, r, cr || ATT.line, cr ? 2.5 : 1.5);
+  aRing(g, xs[1], y0, r, cp || ATT.line, cp ? 2.5 : 1.5);
+  aRing(g, xs[2], y0, r);
+  [xs[0], xs[1]].forEach((cx) => { g.save(); g.globalAlpha = .45; g.strokeStyle = ATT.amber; g.lineWidth = 1; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(cx - r + 3, y0); g.lineTo(cx + r - 3, y0); g.stroke(); g.setLineDash([]); g.restore(); });
+  g.save(); g.translate(xs[0], y0 + 5 * K); g.rotate(rad(a.roll)); g.scale(K, K); rearView(g); g.restore();           // roll: right side down is positive
+  g.save(); g.translate(xs[1], y0 + 3 * K); g.rotate(rad(-a.pitch)); g.scale(K, K); sideView(g); g.restore();         // pitch: nose up is positive
+  g.save(); g.translate(xs[2], y0); g.rotate(rad(-a.yaw));                                                           // yaw: the compass turns, the vehicle stays pointing up
+  aTicks(g, r, 30, 5);
+  [["N", 0], ["E", 90], ["S", 180], ["W", 270]].forEach(([c, d]) => aText(g, c, Math.sin(rad(d)) * (r - 10), -Math.cos(rad(d)) * (r - 10) + 3.5, 10, c === "N" ? ATT.amber : ATT.dim, c === "N"));
+  g.restore();
+  g.save(); g.translate(xs[2], y0 - 1); g.scale(K * 0.85, K * 0.85); topView(g); g.restore();
+  g.globalAlpha = 1;
+  const ly = y0 + r + 16;
+  aText(g, has ? sgnDeg(a.roll) : "---", xs[0], ly, 12, has ? (cr || ATT.text) : ATT.dim, !!cr);
+  aText(g, has ? sgnDeg(a.pitch) : "---", xs[1], ly, 12, has ? (cp || ATT.text) : ATT.dim, !!cp);
+  aText(g, has ? Math.round(wrap360(a.yaw)) % 360 + "°" : "---", xs[2], ly, 12, has ? ATT.text : ATT.dim);
+  drawDepth(g, x0 + 3 * gap, y0, r);
+  const warn = tiltLevel.roll || tiltLevel.pitch ? (tiltLevel.roll === 2 || tiltLevel.pitch === 2 ? ", tilt alert" : ", tilt warning") : "";
+  const label = (has ? `Roll ${sgnDeg(a.roll)}, pitch ${sgnDeg(a.pitch)}, yaw ${Math.round(wrap360(a.yaw)) % 360} degrees${warn}` : "Roll, pitch and yaw: no data")
+              + (depthTarget !== null ? `. Depth ${Math.max(0, attShown.depth).toFixed(1)} metres` : ". Depth: no data");
+  if (label !== attLabel) { attLabel = label; attCanvas.setAttribute("aria-label", label); }
+}
+const attSmooth = matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : 0.3;
+function attFrame() {
+  if (attTarget) {
+    attShown.roll += angDiff(attTarget.roll, attShown.roll) * attSmooth;
+    attShown.pitch += angDiff(attTarget.pitch, attShown.pitch) * attSmooth;
+    attShown.yaw = wrap360(attShown.yaw + angDiff(attTarget.yaw, attShown.yaw) * attSmooth);
+  }
+  if (depthTarget !== null) attShown.depth += (depthTarget - attShown.depth) * attSmooth;
+  drawAttitude();
+  requestAnimationFrame(attFrame);
+}
+function readAttitude() {                                // 10 times a second, like the Cube's attitude messages
+  const d = backend.get_data();
+  const had = attTarget !== null, hadDepth = depthTarget !== null;
+  attTarget = d.roll == null || d.pitch == null || d.yaw == null ? null : { roll: d.roll, pitch: d.pitch, yaw: d.yaw };
+  depthTarget = d.depth == null ? null : d.depth;
+  if (attTarget && !had) Object.assign(attShown, attTarget);        // first data after a gap: jump straight to it, no swing from the old position
+  if (depthTarget !== null && !hadDepth) attShown.depth = depthTarget;
+}
+setInterval(readAttitude, 100);
+readAttitude();
+requestAnimationFrame(attFrame);
+
+/* ===================================================================
+   STEP 6: MOTOR OUTPUTS (top view, each number next to its motor)
+   M1-M4 are the four angled horizontal thrusters, M5/M6 the two vertical ones (positions are a guess: change MOTOR_POS to match the frame).
+   Values are PWM microseconds; 1500 = stopped, amber near the ends (1100 / 1900).
+   =================================================================== */
+const MOTOR_SAT = 380;                       // amber when the output is this far from 1500
+const motorCanvas = $("motors"), mCtx = motorCanvas.getContext("2d");
+const M_W = 480, M_H = 132;
+motorCanvas.width = M_W * attDpr; motorCanvas.height = M_H * attDpr; mCtx.scale(attDpr, attDpr);
+let motorLabel = "";
+function drawMotors() {
+  const g = mCtx, p = backend.get_data().motors, has = Array.isArray(p) && p.length >= 6, cx = M_W / 2, cy = 66;
+  const val = (i) => (has && p[i] != null ? String(Math.round(p[i])) : "---");
+  const col = (i) => (!has || p[i] == null ? ATT.dim : Math.abs(p[i] - 1500) >= MOTOR_SAT ? ATT.amber : ATT.text);
+  g.clearRect(0, 0, M_W, M_H);
+  g.globalAlpha = has ? 1 : 0.4;
+  g.strokeStyle = ATT.text; g.lineWidth = 2; aRound(g, cx - 42, cy - 32, 84, 64, 5); g.stroke();
+  aPart(g, cx - 10, cy - 40, 20, 80, 10, ATT.tube);
+  [[-42, -32, 1, -1, -1], [42, -32, -1, 1, -1], [-42, 32, -1, -1, 1], [42, 32, 1, 1, 1]].forEach(([x, y, d, sx, sy], i) => {     // M1-M4: angled corner thrusters
+    g.save(); g.translate(cx + x, cy + y); g.rotate(d * Math.PI / 4); aPart(g, -5, -14, 10, 28, 3, ATT.dark); g.restore();
+    const tx = cx + x + sx * 26, ty = cy + y + (sy < 0 ? -4 : 14);
+    aText(g, "M" + (i + 1), tx, ty - 12 + (sy < 0 ? -2 : 2), 10, ATT.dim); aText(g, val(i), tx, ty + 2, 13, col(i));
+  });
+  [[-22, 4], [22, 5]].forEach(([x, i]) => {                                                                                      // M5, M6: vertical thrusters
+    aDisc(g, cx + x, cy, 9, ATT.dark);
+    aText(g, "M" + (i + 1), cx + x * 4.6, cy - 10, 10, ATT.dim); aText(g, val(i), cx + x * 4.6, cy + 6, 13, col(i));
+  });
+  g.globalAlpha = 1;
+  const label = has ? "Motor outputs: " + p.slice(0, 6).map((v, i) => `M${i + 1} ${Math.round(v)}`).join(", ") : "Motor outputs: no data";
+  if (label !== motorLabel) { motorLabel = label; motorCanvas.setAttribute("aria-label", label); }
+}
+setInterval(drawMotors, 100);
+drawMotors();
+
+/* ===================================================================
+   STEP 7: CUBE LOGGER
+   New messages from backend.pop_events() are added at the top with the time they arrived.
+   Red = refusals, failures, leak, link lost; amber = warnings; white = everything else.
+   =================================================================== */
+const logBox = $("log");
+const addLog = makeLogger(logBox), addJetsonLog = makeLogger($("jlog"));
+function pollLog() {
+  (backend.pop_events() || []).forEach(addLog);
+  (backend.jetson_pop_events() || []).forEach(addJetsonLog);
+}
+setInterval(pollLog, 300);
+
+/* ===================================================================
+   STEP 8: JETSON PANEL
+   The buttons only ASK (like the arm button); the labels, the dots and which buttons work all follow backend.get_data().jetson.
+   Stopping the cameras is allowed whenever we are connected and they are not already stopped, so a half-started script can always be restarted.
+   =================================================================== */
+function drawJetson() {
+  const j = backend.get_data().jetson || { ssh: "disconnected", cameras: "unknown" };
+  const linked = j.ssh === "connected";
+  setText($("jConnText"), SSH_TEXT[j.ssh] || j.ssh);
+  $("jDot").className = "dot " + (SSH_DOT[j.ssh] || "");
+  setText($("jConn"), linked ? "Disconnect" : j.ssh === "connecting" ? "Connecting..." : "Connect to Jetson");
+  $("jConn").disabled = j.ssh === "connecting";
+  const cam = linked ? j.cameras : "unknown";
+  setText($("jCamText"), "Cameras: " + (CAM_TEXT[cam] || cam));
+  $("jCamDot").className = "dot " + (CAM_DOT[cam] || "");
+  $("jStart").disabled = !linked || cam === "running" || cam === "starting" || cam === "stopping";
+  $("jStop").disabled = !linked || cam === "stopped" || cam === "stopping";
+}
+$("jConn").onclick = () => { if ((backend.get_data().jetson || {}).ssh === "connected") backend.jetson_disconnect(); else backend.jetson_connect(); };
+$("jStart").onclick = () => backend.jetson_start_cameras();
+$("jStop").onclick = () => backend.jetson_stop_cameras();
+setInterval(drawJetson, 200);
+drawJetson();
+
+$("oMove").onchange = (e) => { backend.opt.moving = e.target.checked; backend.flip = false; backend.tilt = false; };
+$("oStale").onchange = (e) => { backend.opt.stale = e.target.checked; };
+$("oStick").onchange = (e) => { backend.opt.stick = e.target.checked; };
+$("oNoJoy").onchange = (e) => { backend.opt.noJoy = e.target.checked; };
+$("oMsgs").onclick = () => { ["Cube: PreArm: Compass not healthy", "Cube: Low battery", "Cube: Leak detected", "LEAK DETECTED", "Cube: Mode change to ALT_HOLD"].forEach((m) => backend._ev(m)); };
+$("oJFail").onchange = (e) => { backend.opt.jFail = e.target.checked; };
+$("oJScript").onchange = (e) => { backend.opt.jScript = e.target.checked; };
+$("oJDrop").onclick = () => backend._jdrop();
+$("oJetson").onchange = (e) => { backend.opt.jetson = e.target.checked; };
+$("oFlip").onclick = () => { backend.flip = !backend.flip; backend.tilt = false; };
+$("oTilt").onclick = () => { backend.tilt = !backend.tilt; backend.flip = false; };
+$("oDeep").onclick = () => { backend.deep = !backend.deep; };
+</script>
+</body>
+</html>
