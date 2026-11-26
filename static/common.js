@@ -24,7 +24,7 @@ const PAGES = [
   { href: "index.html",    name: "Dashboard",   blurb: "Cameras, controls and live data on one screen." },
   { href: "camera.html",   name: "Camera view", blurb: "One camera large, for a second monitor." },
   { href: "sensors.html",  name: "All sensors", blurb: "Every value the Cube reports." },
-  { href: "jetson.html",   name: "Jetson",      blurb: "SSH terminal, Jetson log and more (to be decided)." },
+  { href: "jetson.html",   name: "Jetson",      blurb: "Jetson status and a shortcut to its dashboard controls." },
   { href: "settings.html", name: "Settings",    blurb: "Joystick, Cube and calibration settings." },
 ];
 function buildNav() {
@@ -50,10 +50,10 @@ function buildNav() {
    url: null  = placeholder picture, so the page works with no cameras at all.
    =================================================================== */
 const SOURCES = [
-  { name: "Camera 1", url: "http://localhost:8000/?action=stream" },
-  { name: "Camera 2", url: "127.0.0.1:8000" },
-  { name: "Camera 3", url: "127.0.0.1:8000" },
-  { name: "Camera 4", url: "127.0.0.1:8000" },
+  { name: "Camera 1", url: null },
+  { name: "Camera 2", url: null },
+  { name: "Camera 3", url: null },
+  { name: "Camera 4", url: null },
 ];
 const RETRY_MS = 3000;                       // how often a dead stream is retried
 const STORAGE_KEY = "rov.cameraSlots";       // remembers which camera is in which box after a reload

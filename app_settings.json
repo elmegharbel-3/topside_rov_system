@@ -22,22 +22,31 @@
   },
 
   "jetson": {
-    "host": "192.168.2.2",
     "port": 22,
-    "user": "jetson",
-    "password": "",
     "key_file": "",
-    "_login_help": "CHECK all five. Use a password OR a key_file (path to your private key). Leave the other one empty.",
+    "_login_help": "Host, username and password default to JETSON_IP, JETSON_USER and JETSON_PASS near the top of app.py. You can override them here; JETSON_PASSWORD overrides the password.",
 
-    "start_cmd": "nohup python3 ~/stream_cameras.py > ~/stream_cameras.log 2>&1 &",
-    "stop_cmd": "pkill -f stream_cameras.py",
-    "check_cmd": "pgrep -f stream_cameras.py",
-    "_cmd_help": "CHECK. start_cmd must return at once (the nohup ... & part keeps the script alive if the SSH link drops). check_cmd must exit with 0 when the script is running.",
+    "start_cmd": "nohup bash ~/start_all.sh > ~/start_all.log 2>&1 < /dev/null &",
+    "stop_cmd": "pkill -INT -f '[s]tart_all.sh'",
+    "check_cmd": "pgrep -f '[s]tart_all.sh'",
+    "_cmd_help": "start_cmd runs automatically after SSH connects and must return at once. Adjust start/stop/check commands if your camera script differs.",
 
-    "temps_cmd": "for z in /sys/devices/virtual/thermal/thermal_zone*; do echo \"$(cat $z/type) $(cat $z/temp)\"; done",
-    "_temps_help": "Prints lines like 'CPU-therm 41500' (millidegrees). The line with CPU gives the CPU temperature, the line with GPU gives the GPU temperature. Empty string = do not read temperatures.",
+    "temps_cmd": "for z in /sys/class/thermal/thermal_zone*; do [ -e \"$z/temp\" ] && [ -e \"$z/type\" ] || continue; t=$(cat \"$z/type\"); case \"$t\" in cpu-thermal|gpu-thermal|CPU-therm|GPU-therm) echo \"$t $(cat \"$z/temp\")\";; esac; done",
+    "_temps_help": "The CPU and GPU temperature command prints sensor name and millidegrees; readings update immediately after SSH connects and then every second.",
 
-    "poll_s": 3,
+    "fan_auto_cmd": "found=0; for f in /sys/class/hwmon/hwmon*/pwm1_enable; do [ -e \"$f\" ] || continue; echo 2 > \"$f\" || exit 1; found=1; done; [ \"$found\" -eq 1 ] || { echo 'No hwmon pwm1_enable found; automatic mode is unsupported' >&2; exit 1; }; echo 'Jetson automatic fan control enabled'",
+    "fan_manual_cmd": "found=0; for f in /sys/class/hwmon/hwmon*/pwm1; do [ -e \"$f\" ] || continue; enable=\"${f}_enable\"; if [ -e \"$enable\" ]; then echo 1 > \"$enable\" || exit 1; fi; echo {pwm} > \"$f\" || exit 1; found=1; done; [ \"$found\" -eq 1 ] || { echo 'No hwmon pwm1 found' >&2; exit 1; }; echo 'Manual fan set to {percent}% (PWM {pwm}/255)'",
+    "fan_cmd": "found=0; for f in /sys/class/hwmon/hwmon*/pwm1; do [ -e \"$f\" ] || continue; enable=\"${f}_enable\"; if [ -e \"$enable\" ]; then echo 1 > \"$enable\" || exit 1; fi; echo {pwm} > \"$f\" && found=1; done; [ \"$found\" -eq 1 ] || { echo 'No hwmon pwm1 found' >&2; exit 1; }; echo 'Fan set to {percent}% (PWM {pwm}/255)'",
+    "_fan_help": "Fan defaults to Jetson automatic control using pwm1_enable=2. Manual mode uses pwm1_enable=1 and fan_cmd.",
+
+    "camera_ports": [8081, 8082, 8083, 8084],
+    "camera_stream_path": "/stream",
+    "_camera_help": "The dashboard connects camera streams directly at http://host:port/stream. Change these if your stream ports or path differ.",
+    "auto_connect": true,
+    "auto_start_cameras": true,
+    "auto_retry_s": 3,
+
+    "poll_s": 1,
     "connect_timeout_s": 6
   }
 }
