@@ -81,11 +81,11 @@
    =================================================================== */
 .temps { display: flex; justify-content: center; gap: clamp(10px, 1.2vw, 22px); margin-top: 10px; white-space: nowrap; font-size: clamp(12px, 0.9vw, 14px); }
 .temp { display: flex; gap: 6px; align-items: baseline; }
-.temp .k { color: var(--dim); }
+.temp .k { color: var(--text); }
 .temp .v.none { color: var(--dim); }
 .sentrow { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 12px; }
 .sent { display: grid; grid-template-columns: repeat(5, 1fr); flex: 0 1 310px; text-align: center; row-gap: 2px; }
-.sent .k { color: var(--dim); }
+.sent .k { color: var(--text); }
 .sent.off .v, .sent.none .v { color: var(--dim); }
 .joybtn { flex: none; border-radius: var(--radius-sm); height: 24px; padding: 0 8px; font-size: 11px; background: var(--box-dark); border: 1px solid var(--line); cursor: pointer; }
 .joybtn.is-off { border-color: var(--alert); color: var(--alert); }
@@ -102,7 +102,14 @@
 </style>
 </head>
 <body>
-<header class="topbar"><nav class="nav" id="nav" aria-label="Pages"></nav><h1 class="brand">Overflow Robotics</h1></header>
+<header class="topbar">
+  <nav class="nav" id="nav" aria-label="Pages"></nav>
+  <div class="mid_head">
+    <img src="egypt.avif" alt="">
+    <h1 class="brand">Overflow Robotics</h1>
+    <img src="overflow_logo-removebg-preview.png" alt="">
+  </div>
+</header>
 <div class="app">
   <div class="layout">
     <section class="cams grid" id="cams" aria-label="Cameras"></section>
