@@ -15,8 +15,9 @@
   <main class="page">
     <h2 id="title"></h2>
     <p class="dim" id="blurb"></p>
-    <p class="dim">Not designed yet.</p>
-    <p class="dim" id="check"></p>
+    <p id="status" aria-live="polite">Waiting for dashboard data...</p>
+    <p id="temps" class="dim"></p>
+    <p><a href="index.html">Open the dashboard for SSH, camera and fan controls</a></p>
   </main>
 </div>
 
@@ -27,12 +28,16 @@ buildNav();
 const me = PAGES.find((p) => p.href === location.pathname.split("/").pop());
 if (me) { $("title").textContent = me.name; $("blurb").textContent = me.blurb; }
 
-/* proof that this page uses the same backend interface as the dashboard (delete when the page is designed) */
-function check() {
+function updateJetsonStatus() {
   const d = backend.get_data();
-  $("check").textContent = "Backend check: " + (d.connected ? `Cube connected, ${d.armed ? "armed" : "disarmed"}, ${d.mode}` : "no Cube link");
+  const j = d.jetson || { ssh: "disconnected", cameras: "unknown" };
+  $("status").textContent = `SSH: ${SSH_TEXT[j.ssh] || j.ssh}; cameras: ${CAM_TEXT[j.cameras] || j.cameras}`;
+  const cpu = d.jetson_cpu_c == null ? "—" : d.jetson_cpu_c.toFixed(1) + " °C";
+  const gpu = d.jetson_gpu_c == null ? "—" : d.jetson_gpu_c.toFixed(1) + " °C";
+  $("temps").textContent = `CPU: ${cpu} · GPU: ${gpu}`;
 }
-setInterval(check, 500); check();
+setInterval(updateJetsonStatus, 500);
+updateJetsonStatus();
 </script>
 </body>
 </html>

@@ -22,6 +22,7 @@
 .jetson { margin-top: 10px; display: grid; gap: 6px; }
 .jrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 28px; }
 .side .log.jlog { flex: none; height: 76px; min-height: 0; margin-top: 0; }
+.fan-range { flex: 1 1 90px; min-width: 90px; }
 
 /* ===================================================================
    STEP 2: CAMERAS
@@ -138,6 +139,18 @@
           <button class="jbtn" id="jStart" type="button" disabled>Start cameras</button>
           <button class="jbtn" id="jStop" type="button" disabled>Stop cameras</button>
           <span class="jstate"><span class="dot" id="jCamDot"></span><span id="jCamText" aria-live="polite">Cameras: unknown</span></span>
+        </div>
+        <div class="jrow">
+          <label for="jFanMode">Fan mode</label>
+          <select class="jbtn" id="jFanMode" disabled>
+            <option value="auto" selected>Auto (Jetson)</option>
+            <option value="manual">Manual</option>
+          </select>
+          <span id="jFanModeText">Automatic (Jetson)</span>
+          <label for="jFan">Manual speed</label>
+          <input class="fan-range" id="jFan" type="range" min="0" max="100" value="50" disabled>
+          <span id="jFanValue">50%</span>
+          <button class="jbtn" id="jFanSet" type="button" disabled>Set fan speed</button>
         </div>
         <div class="log jlog" id="jlog" role="log" aria-live="polite" aria-label="Jetson log"><div class="none">No Jetson messages yet</div></div>
       </section>
@@ -565,7 +578,19 @@ setInterval(pollLog, 300);
    Stopping the cameras is allowed whenever we are connected and they are not already stopped, so a half-started script can always be restarted.
    =================================================================== */
 function drawJetson() {
-  const j = backend.get_data().jetson || { ssh: "disconnected", cameras: "unknown" };
+  const d = backend.get_data();
+  const j = d.jetson || { ssh: "disconnected", cameras: "unknown" };
+  const cameraUrls = d.jetson_camera_urls;
+  if (Array.isArray(cameraUrls) && cameraUrls.length === SOURCES.length) {
+    let changed = false;
+    cameraUrls.forEach((url, i) => {
+      if (typeof url === "string" && SOURCES[i].url !== url) {
+        SOURCES[i].url = url;
+        changed = true;
+      }
+    });
+    if (changed) render();
+  }
   const linked = j.ssh === "connected";
   setText($("jConnText"), SSH_TEXT[j.ssh] || j.ssh);
   $("jDot").className = "dot " + (SSH_DOT[j.ssh] || "");
@@ -576,10 +601,25 @@ function drawJetson() {
   $("jCamDot").className = "dot " + (CAM_DOT[cam] || "");
   $("jStart").disabled = !linked || cam === "running" || cam === "starting" || cam === "stopping";
   $("jStop").disabled = !linked || cam === "stopped" || cam === "stopping";
+  const fanMode = j.fan_mode || "auto";
+  const fanModeValue = fanMode.replace(/^(setting_|failed_)/, "");
+  const fanModeText = {
+    auto: "Automatic (Jetson)", manual: "Manual",
+    setting_auto: "Switching to Auto...", setting_manual: "Switching to Manual...",
+    failed_auto: "Auto mode failed", failed_manual: "Manual mode failed"
+  };
+  $("jFanMode").value = fanModeValue === "manual" ? "manual" : "auto";
+  $("jFanMode").disabled = !linked || fanMode.startsWith("setting_");
+  setText($("jFanModeText"), fanModeText[fanMode] || "Fan mode unknown");
+  $("jFan").disabled = !linked || fanMode !== "manual";
+  $("jFanSet").disabled = !linked || fanMode !== "manual";
 }
 $("jConn").onclick = () => { if ((backend.get_data().jetson || {}).ssh === "connected") backend.jetson_disconnect(); else backend.jetson_connect(); };
 $("jStart").onclick = () => backend.jetson_start_cameras();
 $("jStop").onclick = () => backend.jetson_stop_cameras();
+$("jFanMode").onchange = (e) => backend.jetson_set_fan_mode(e.target.value, Number($("jFan").value));
+$("jFan").oninput = (e) => setText($("jFanValue"), e.target.value + "%");
+$("jFanSet").onclick = () => backend.jetson_set_fan_speed(Number($("jFan").value));
 setInterval(drawJetson, 200);
 drawJetson();
 

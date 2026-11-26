@@ -17,11 +17,14 @@ disarm. For bench tests without a joystick set  "disarm_without_joystick": false
 HOW THE PAGES TALK TO IT
    GET  /api/stream           live data (Server-Sent Events, 10 times a second) + new log lines
    POST /api/arm  /api/disarm  /api/mode {"name": "MANUAL"}  /api/joystick {"enabled": true}
-   POST /api/jetson/connect | disconnect | start_cameras | stop_cameras
+   POST /api/jetson/connect | disconnect | start_cameras | stop_cameras | refresh_temperatures
+   POST /api/jetson/fan {"percent": 0..100}
 """
 import json
 import os
+import shlex
 import signal
+import socket
 import sys
 import threading
 import time
@@ -36,8 +39,11 @@ DEFAULTS = {
     "cube": {"connection": "COM8", "baud": 115200, "retry_s": 2, "lost_s": 5},
     "joystick": {"rate_hz": 50, "disarm_without_joystick": True},
     "web": {"host": "0.0.0.0", "port": 5000},
-    "jetson": {"host": "192.168.2.2", "port": 22, "user": "jetson", "password": "", "key_file": "",
-               "start_cmd": "", "stop_cmd": "", "check_cmd": "", "temps_cmd": "", "poll_s": 3, "connect_timeout_s": 6},
+    "jetson": {"host": "192.168.137.132", "port": 22, "user": "jet", "password": "jet", "key_file": "",
+               "start_cmd": "", "stop_cmd": "", "check_cmd": "", "temps_cmd": "", "fan_cmd": "",
+               "camera_ports": [8081, 8082, 8083, 8084], "camera_stream_path": "/stream",
+               "auto_connect": True, "auto_start_cameras": True, "auto_retry_s": 3,
+               "poll_s": 1, "connect_timeout_s": 6},
 }
 
 
@@ -105,19 +111,73 @@ class JetsonLink:
         self._generation = 0             # changes at every connect / disconnect, so old threads know to stop
         self._ssh = "disconnected"
         self._cameras = "unknown"
+        self._fan_mode = "auto"
         self._cpu = None
         self._gpu = None
+        self._auto_stop = threading.Event()
+        self._auto_thread = None
+        self._manual_disconnect = False
 
     # ------------------------------------------------------------ what the page reads
     def state(self):
         with self._lock:
-            return {"ssh": self._ssh, "cameras": self._cameras}, self._cpu, self._gpu
+            return {"ssh": self._ssh, "cameras": self._cameras, "fan_mode": self._fan_mode}, self._cpu, self._gpu
+
+    def camera_urls(self):
+        host = self._settings["host"]
+        path = self._settings.get("camera_stream_path", "/stream")
+        return [
+            f"http://{host}:{int(port)}{path}"
+            for port in self._settings.get("camera_ports", [])
+        ]
+
+    def start_auto_connect(self):
+        if not self._settings.get("auto_connect", True):
+            return
+        if self._auto_thread is not None and self._auto_thread.is_alive():
+            return
+        self._auto_stop.clear()
+        self._auto_thread = threading.Thread(
+            target=self._auto_connect_loop, name="jetson-auto-connect", daemon=True
+        )
+        self._auto_thread.start()
+
+    def stop_auto_connect(self):
+        self._auto_stop.set()
+        if self._auto_thread is not None:
+            self._auto_thread.join(timeout=1.0)
+
+    def _auto_connect_loop(self):
+        retry_s = max(1.0, float(self._settings.get("auto_retry_s", 3)))
+        while not self._auto_stop.is_set():
+            try:
+                with socket.create_connection(
+                    (self._settings["host"], int(self._settings["port"])), timeout=1.0
+                ):
+                    reachable = True
+            except OSError:
+                reachable = False
+
+            if not reachable:
+                with self._lock:
+                    self._manual_disconnect = False
+            else:
+                with self._lock:
+                    should_connect = (
+                        not self._manual_disconnect
+                        and self._ssh not in ("connecting", "connected")
+                    )
+                if should_connect:
+                    self.connect(automatic=True)
+            self._auto_stop.wait(retry_s)
 
     # ------------------------------------------------------------ connect / disconnect
-    def connect(self):
+    def connect(self, automatic=False):
         with self._lock:
             if self._ssh in ("connecting", "connected"):
                 return False
+            if not automatic:
+                self._manual_disconnect = False
             self._ssh, self._cameras = "connecting", "unknown"
             self._cpu = self._gpu = None
             self._generation += 1
@@ -127,10 +187,14 @@ class JetsonLink:
         threading.Thread(target=self._connect_thread, args=(gen,), name="jetson-connect", daemon=True).start()
         return True
 
-    def disconnect(self):
+    def disconnect(self, manual=True):
         with self._lock:
             if self._ssh == "disconnected":
+                if manual:
+                    self._manual_disconnect = True
                 return False
+            if manual:
+                self._manual_disconnect = True
             self._generation += 1
             client, self._client = self._client, None
             self._ssh, self._cameras = "disconnected", "unknown"
@@ -175,6 +239,15 @@ class JetsonLink:
             self._lost(gen, f"{type(e).__name__}: {e}")
             return
         threading.Thread(target=self._monitor_thread, args=(gen,), name="jetson-monitor", daemon=True).start()
+        self.set_fan_mode("auto")
+        self.refresh_temperatures()
+        with self._lock:
+            should_start_cameras = (
+                self._settings.get("auto_start_cameras", True)
+                and self._cameras == "stopped"
+            )
+        if should_start_cameras:
+            self.start_cameras()
 
     # ------------------------------------------------------------ running commands
     def _run(self, command, timeout=10):
@@ -226,6 +299,11 @@ class JetsonLink:
         if not cmd:
             return
         code, text = self._run(cmd, timeout=6)
+        if code != 0:
+            with self._lock:
+                self._cpu = self._gpu = None
+            self._log.add(f"Temperature command exited with code {code}: {text}")
+            return
         cpu = gpu = None
         for line in text.splitlines():
             parts = line.split()
@@ -305,6 +383,8 @@ class JetsonLink:
     def _stop_thread(self, gen):
         try:
             code, text = self._run(self._settings["stop_cmd"], timeout=10)
+            if code != 0:
+                raise RuntimeError(f"the stop command exited with code {code}: {text}")
             for line in text.splitlines()[-5:]:
                 self._log.add(f"Jetson: {line}")
             for _ in range(5):
@@ -312,7 +392,7 @@ class JetsonLink:
                 with self._lock:
                     if gen != self._generation:
                         return
-                if not self._settings["check_cmd"] or self._run(self._s["check_cmd"], timeout=6)[0] != 0:
+                if not self._settings["check_cmd"] or self._run(self._settings["check_cmd"], timeout=6)[0] != 0:
                     with self._lock:
                         self._cameras = "stopped"
                     self._log.add("Cameras: the stream script has stopped")
@@ -324,6 +404,132 @@ class JetsonLink:
                     return
                 self._cameras = "failed"
             self._log.add(f"Cameras: {type(e).__name__}: {e}")
+
+    def refresh_temperatures(self):
+        with self._lock:
+            if self._ssh != "connected":
+                return False
+            gen = self._generation
+        threading.Thread(
+            target=self._refresh_temperatures_thread,
+            args=(gen,),
+            name="jetson-temperature-refresh",
+            daemon=True,
+        ).start()
+        return True
+
+    def _refresh_temperatures_thread(self, gen):
+        try:
+            self._read_temps()
+        except Exception as e:
+            self._lost(gen, f"{type(e).__name__}: {e}")
+
+    def set_fan_speed(self, percent):
+        if isinstance(percent, bool) or not isinstance(percent, int) or not 0 <= percent <= 100:
+            self._log.add("Fan: speed must be an integer from 0 to 100")
+            return False
+        with self._lock:
+            if self._ssh != "connected":
+                self._log.add("Fan: connect to the Jetson first")
+                return False
+            if self._fan_mode != "manual":
+                self._log.add("Fan: select Manual mode before setting a speed")
+                return False
+            if not self._settings.get("fan_cmd"):
+                self._log.add("Fan: configure fan_cmd in app_settings.json first")
+                return False
+            gen = self._generation
+        pwm = round(percent * 255 / 100)
+        command = self._settings["fan_cmd"].replace("{pwm}", str(pwm)).replace(
+            "{percent}", str(percent)
+        )
+        threading.Thread(
+            target=self._set_fan_speed_thread,
+            args=(gen, percent, command),
+            name="jetson-fan-control",
+            daemon=True,
+        ).start()
+        return True
+
+    def set_fan_mode(self, mode, percent=50):
+        if mode not in ("auto", "manual"):
+            self._log.add("Fan: mode must be auto or manual")
+            return False
+        if mode == "manual" and (
+            isinstance(percent, bool)
+            or not isinstance(percent, int)
+            or not 0 <= percent <= 100
+        ):
+            self._log.add("Fan: speed must be an integer from 0 to 100")
+            return False
+        with self._lock:
+            if self._ssh != "connected":
+                self._log.add("Fan: connect to the Jetson first")
+                return False
+            if self._fan_mode.startswith("setting_"):
+                return False
+            command = self._settings.get(f"fan_{mode}_cmd", "")
+            if not command:
+                self._log.add(f"Fan: configure fan_{mode}_cmd in app_settings.json first")
+                return False
+            if mode == "manual":
+                pwm = round(percent * 255 / 100)
+                command = command.replace("{pwm}", str(pwm)).replace(
+                    "{percent}", str(percent)
+                )
+            gen = self._generation
+            self._fan_mode = f"setting_{mode}"
+        threading.Thread(
+            target=self._set_fan_mode_thread,
+            args=(gen, mode, command),
+            name="jetson-fan-mode",
+            daemon=True,
+        ).start()
+        return True
+
+    def _run_sudo_command(self, script, timeout=10):
+        with self._lock:
+            client = self._client
+        if client is None:
+            raise ConnectionError("not connected")
+        command = f"sudo -S -p '' sh -c {shlex.quote(script)}"
+        stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+        stdin.write((self._settings["password"] or "") + "\n")
+        stdin.flush()
+        stdin.close()
+        out = stdout.read().decode(errors="replace").strip()
+        err = stderr.read().decode(errors="replace").strip()
+        return stdout.channel.recv_exit_status(), out, err
+
+    def _set_fan_mode_thread(self, gen, mode, script):
+        try:
+            code, out, err = self._run_sudo_command(script)
+            if code:
+                raise RuntimeError(f"command failed (exit {code}): {err or out}")
+            with self._lock:
+                if gen != self._generation:
+                    return
+                self._fan_mode = mode
+            self._log.add(out or f"Fan: switched to {mode} mode")
+        except Exception as e:
+            with self._lock:
+                if gen != self._generation:
+                    return
+                self._fan_mode = f"failed_{mode}"
+            self._log.add(f"Fan: could not switch to {mode} mode: {type(e).__name__}: {e}")
+
+    def _set_fan_speed_thread(self, gen, percent, script):
+        try:
+            code, out, err = self._run_sudo_command(script)
+            with self._lock:
+                if gen != self._generation:
+                    return
+            if code:
+                self._log.add(f"Fan: command failed (exit {code}): {err or out}")
+            else:
+                self._log.add(out or f"Fan: set to {percent}%")
+        except Exception as e:
+            self._log.add(f"Fan: {type(e).__name__}: {e}")
 
 
 # ======================================================================================
@@ -501,6 +707,7 @@ def create_app(vehicle, jetson, cube_log, jetson_log):
         d = vehicle.cube.get_data()
         d["motors"] = d["motors"][:6] if d["motors"] else None          # the page shows M1..M6
         d["jetson"], d["jetson_cpu_c"], d["jetson_gpu_c"] = jetson.state()
+        d["jetson_camera_urls"] = jetson.camera_urls()
         d["joystick_enabled"] = vehicle.joystick_enabled
         d["joystick_connected"] = vehicle.joystick_connected
         d["sent"] = list(vehicle.sent)
@@ -541,10 +748,39 @@ def create_app(vehicle, jetson, cube_log, jetson_log):
     @app.post("/api/jetson/<action>")
     def jetson_action(action):
         actions = {"connect": jetson.connect, "disconnect": jetson.disconnect,
-                   "start_cameras": jetson.start_cameras, "stop_cameras": jetson.stop_cameras}
+                   "start_cameras": jetson.start_cameras, "stop_cameras": jetson.stop_cameras,
+                   "refresh_temperatures": jetson.refresh_temperatures}
         if action not in actions:
             return answer(False), 404
         return answer(actions[action]())
+
+    @app.post("/api/jetson/fan")
+    def jetson_fan():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict):
+            return jsonify(ok=False, error="JSON object required"), 400
+        percent = payload.get("percent")
+        if isinstance(percent, bool) or not isinstance(percent, int) or not 0 <= percent <= 100:
+            return jsonify(ok=False, error="percent must be an integer from 0 to 100"), 400
+        if not jetson.set_fan_speed(percent):
+            return jsonify(ok=False), 409
+        return answer(True)
+
+    @app.post("/api/jetson/fan/mode")
+    def jetson_fan_mode():
+        payload = request.get_json(silent=True)
+        if not isinstance(payload, dict) or payload.get("mode") not in ("auto", "manual"):
+            return jsonify(ok=False, error="mode must be auto or manual"), 400
+        percent = payload.get("percent", 50)
+        if payload["mode"] == "manual" and (
+            isinstance(percent, bool)
+            or not isinstance(percent, int)
+            or not 0 <= percent <= 100
+        ):
+            return jsonify(ok=False, error="percent must be an integer from 0 to 100"), 400
+        if not jetson.set_fan_mode(payload["mode"], percent):
+            return jsonify(ok=False), 409
+        return answer(True)
 
     return app
 
@@ -563,6 +799,7 @@ def main():
         raise KeyboardInterrupt                           # closing the window / kill: shut down the same way as Ctrl+C
     signal.signal(signal.SIGTERM, on_terminate)
     vehicle.start()
+    jetson.start_auto_connect()
     web = settings["web"]
     print(f"Dashboard: http://localhost:{web['port']}   (Ctrl+C to stop)")
     try:
@@ -571,7 +808,8 @@ def main():
         pass
     finally:
         print("\nShutting down ...")
-        jetson.disconnect()
+        jetson.stop_auto_connect()
+        jetson.disconnect(manual=False)
         vehicle.stop()
         print("Done.")
 

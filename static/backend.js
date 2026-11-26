@@ -32,7 +32,7 @@ const MODES = ["MANUAL", "STABILIZE", "ALT_HOLD", "SURFACE"];      // = allowed_
    =================================================================== */
 const NO_DATA = { connected: false, armed: null, mode: null, mode_request: null, roll: null, pitch: null, yaw: null, depth: null,
                   water_temp_c: null, jetson_cpu_c: null, jetson_gpu_c: null, sent: null, joystick_enabled: null, joystick_connected: null,
-                  motors: null, jetson: { ssh: "disconnected", cameras: "unknown" } };
+                  motors: null, jetson: { ssh: "disconnected", cameras: "unknown" }, jetson_camera_urls: null };
 class RemoteBackend {
   constructor() {
     this.d = null; this.events = []; this.jEvents = []; this.up = false; this.wasUp = false;
@@ -67,6 +67,9 @@ class RemoteBackend {
   jetson_disconnect() { return this._post("/api/jetson/disconnect"); }
   jetson_start_cameras() { return this._post("/api/jetson/start_cameras"); }
   jetson_stop_cameras() { return this._post("/api/jetson/stop_cameras"); }
+  jetson_refresh_temperatures() { return this._post("/api/jetson/refresh_temperatures"); }
+  jetson_set_fan_speed(percent) { return this._post("/api/jetson/fan", { percent }); }
+  jetson_set_fan_mode(mode, percent) { return this._post("/api/jetson/fan/mode", { mode, percent }); }
 }
 
 /* Which one? Opened from the file system (double-click) or with ?mock in the address -> the mock. Served by app.py -> the real one. */
