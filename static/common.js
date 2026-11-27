@@ -24,7 +24,7 @@ const PAGES = [
   { href: "index.html",    name: "Dashboard",   blurb: "Cameras, controls and live data on one screen." },
   { href: "camera.html",   name: "Camera view", blurb: "One camera large, for a second monitor." },
   { href: "sensors.html",  name: "All sensors", blurb: "Every value the Cube reports." },
-  { href: "jetson.html",   name: "Jetson",      blurb: "SSH terminal, Jetson log and more (to be decided)." },
+  { href: "jetson.html",   name: "Jetson",      blurb: "Jetson status and a shortcut to its dashboard controls." },
   { href: "settings.html", name: "Settings",    blurb: "Joystick, Cube and calibration settings." },
 ];
 function buildNav() {
@@ -39,13 +39,8 @@ function buildNav() {
   });
   // dark / light button at the right end of the top bar (the page reloads so the canvases pick up the new colors)
   const btn = document.createElement("button"); btn.type = "button"; btn.className = "modebtn";
-  btn.setAttribute("role", "switch"); btn.setAttribute("aria-checked", String(MODE === "light"));
-  btn.textContent = "Light mode"; btn.title = "Light mode";
-  btn.onclick = () => {                      // slide the knob first, then reload once the animation has played
-    btn.setAttribute("aria-checked", String(MODE !== "light"));
-    try { localStorage.setItem("rov-mode", MODE === "dark" ? "light" : "dark"); } catch (e) {}
-    setTimeout(() => location.reload(), reduceMotion ? 0 : 250);
-  };
+  btn.textContent = MODE === "dark" ? "Light mode" : "Dark mode"; btn.title = "Switch between the dark and light look";
+  btn.onclick = () => { try { localStorage.setItem("rov-mode", MODE === "dark" ? "light" : "dark"); } catch (e) {} location.reload(); };
   nav.parentElement.append(btn);
 }
 
@@ -55,10 +50,10 @@ function buildNav() {
    url: null  = placeholder picture, so the page works with no cameras at all.
    =================================================================== */
 const SOURCES = [
-  { name: "Camera 1", url: "water_1.webp" },
-  { name: "Camera 2", url: "water_2.jpg" },
-  { name: "Camera 3", url: "water_3.jpg" },
-  { name: "Camera 4", url: "water_4.jpg" },
+  { name: "Camera 1", url: null },
+  { name: "Camera 2", url: null },
+  { name: "Camera 3", url: null },
+  { name: "Camera 4", url: null },
 ];
 const RETRY_MS = 3000;                       // how often a dead stream is retried
 const STORAGE_KEY = "rov.cameraSlots";       // remembers which camera is in which box after a reload

@@ -14,27 +14,15 @@
 /* right panel */
 .side { background: var(--transp-bg); border-radius: var(--radius); padding: 14px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
 .side > * { flex: none; }
-
-/* ===================================================================
-   THE TWO LOGS: the only things in the panel that change height.
-   Everything else keeps its own size; the two logs share whatever height is left.
-   They start equal (flex-grow 1 : 1). Dragging the bar between them (or arrow keys on it) moves height from one to
-   the other; the script stores the split as two flex-grow numbers. LOG_MIN_PX (script) = the smallest a log can get.
-   =================================================================== */
-.side .log { flex: 1 1 0; min-height: 60px; }        /* min-height here = the same safety limit as LOG_MIN_PX */
-.side #log { margin-top: 12px; }
-.splitter { flex: none; height: 12px; margin: 2px 0; cursor: row-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
-.splitter::before { content: ""; width: 44px; height: 4px; border-radius: 2px; background: var(--line); transition: background .15s, width .15s; }
-.splitter:hover::before, .splitter.dragging::before, .splitter:focus-visible::before { background: var(--text); width: 64px; }
-.splitter:focus-visible { outline: none; }
+.side .log { flex: 1 1 90px; min-height: 90px; margin-top: 12px; }
 
 /* ===================================================================
    STEP 8: JETSON PANEL (under the Cube log): SSH connection, camera script, its own log
-   display: contents = the section's rows and log sit directly in the side panel, so the Jetson log can share
-   height with the Cube log.
    =================================================================== */
-.jetson { display: contents; }
-.jrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 28px; margin-bottom: 6px; }
+.jetson { margin-top: 10px; display: grid; gap: 6px; }
+.jrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 28px; }
+.side .log.jlog { flex: none; height: 76px; min-height: 0; margin-top: 0; }
+.fan-range { flex: 1 1 90px; min-width: 90px; }
 
 /* ===================================================================
    STEP 2: CAMERAS
@@ -49,8 +37,7 @@
 .slot { position: relative; background: var(--transp-bg); border-radius: var(--radius); overflow: hidden; min-height: 0; min-width: 0; cursor: pointer; }
 .slot:hover { outline: 2px solid var(--text); outline-offset: -2px; }
 .slot.focused:hover { outline-color: var(--line); }
-.slot canvas, .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
-.slot img { background: var(--letterbox); }     /* the img only shows while a stream is live, so a live box is fully opaque */
+.slot canvas, .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--transp-bg); }
 .slot img { display: none; }
 
 /* the dropdown: small, and only visible while the mouse is over the picture (or it has keyboard focus) */
@@ -95,11 +82,11 @@
    =================================================================== */
 .temps { display: flex; justify-content: center; gap: clamp(10px, 1.2vw, 22px); margin-top: 10px; white-space: nowrap; font-size: clamp(12px, 0.9vw, 14px); }
 .temp { display: flex; gap: 6px; align-items: baseline; }
-.temp .k { color: var(--text); }
+.temp .k { color: var(--dim); }
 .temp .v.none { color: var(--dim); }
 .sentrow { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 12px; }
 .sent { display: grid; grid-template-columns: repeat(5, 1fr); flex: 0 1 310px; text-align: center; row-gap: 2px; }
-.sent .k { color: var(--text); }
+.sent .k { color: var(--dim); }
 .sent.off .v, .sent.none .v { color: var(--dim); }
 .joybtn { flex: none; border-radius: var(--radius-sm); height: 24px; padding: 0 8px; font-size: 11px; background: var(--box-dark); border: 1px solid var(--line); cursor: pointer; }
 .joybtn.is-off { border-color: var(--alert); color: var(--alert); }
@@ -116,14 +103,7 @@
 </style>
 </head>
 <body>
-<header class="topbar">
-  <nav class="nav" id="nav" aria-label="Pages"></nav>
-  <div class="mid_head">
-    <img src="egypt.avif" alt="">
-    <h1 class="brand">Overflow Robotics</h1>
-    <img src="overflow_logo-removebg-preview.png" alt="">
-  </div>
-</header>
+<header class="topbar"><nav class="nav" id="nav" aria-label="Pages"></nav><h1 class="brand">Overflow Robotics</h1></header>
 <div class="app">
   <div class="layout">
     <section class="cams grid" id="cams" aria-label="Cameras"></section>
@@ -136,8 +116,7 @@
       </div>
       <canvas class="attitude" id="attitude" width="480" height="96" role="img" aria-label="Attitude and depth"></canvas>
       <div class="temps" aria-label="Temperatures">
-        <div class="temp"><span class="k">water</span><span class="v" id="tWater">---</span></div>
-        <div class="temp"><span class="k">cube</span><span class="v" id="tCube">---</span></div>
+        <div class="temp"><span class="k">Water</span><span class="v" id="tWater">---</span></div>
         <div class="temp"><span class="k">Jetson CPU</span><span class="v" id="tCpu">none</span></div>
         <div class="temp"><span class="k">Jetson GPU</span><span class="v" id="tGpu">none</span></div>
       </div>
@@ -151,7 +130,6 @@
       </div>
       <canvas class="motors" id="motors" width="480" height="132" role="img" aria-label="Motor outputs"></canvas>
       <div class="log" id="log" role="log" aria-live="polite" aria-label="Cube log"><div class="none">No messages yet</div></div>
-      <div class="splitter" id="logSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the Cube and Jetson logs" tabindex="0" title="Drag to resize the logs, double-click to make them equal"></div>
       <section class="jetson" aria-label="Jetson Nano">
         <div class="jrow">
           <button class="jbtn" id="jConn" type="button">Connect to Jetson</button>
@@ -161,6 +139,18 @@
           <button class="jbtn" id="jStart" type="button" disabled>Start cameras</button>
           <button class="jbtn" id="jStop" type="button" disabled>Stop cameras</button>
           <span class="jstate"><span class="dot" id="jCamDot"></span><span id="jCamText" aria-live="polite">Cameras: unknown</span></span>
+        </div>
+        <div class="jrow">
+          <label for="jFanMode">Fan mode</label>
+          <select class="jbtn" id="jFanMode" disabled>
+            <option value="auto" selected>Auto (Jetson)</option>
+            <option value="manual">Manual</option>
+          </select>
+          <span id="jFanModeText">Automatic (Jetson)</span>
+          <label for="jFan">Manual speed</label>
+          <input class="fan-range" id="jFan" type="range" min="0" max="100" value="50" disabled>
+          <span id="jFanValue">50%</span>
+          <button class="jbtn" id="jFanSet" type="button" disabled>Set fan speed</button>
         </div>
         <div class="log jlog" id="jlog" role="log" aria-live="polite" aria-label="Jetson log"><div class="none">No Jetson messages yet</div></div>
       </section>
@@ -386,7 +376,7 @@ drawControls();
 function drawTemps() {
   const d = backend.get_data();
   const show = (id, v, none) => { const el = $(id); el.textContent = v == null ? none : v.toFixed(1) + " °C"; el.classList.toggle("none", v == null); };
-  show("tWater", d.water_temp_c, "---"); show("tCpu", d.jetson_cpu_c, "none"); show("tGpu", d.jetson_gpu_c, "none");  show("tCube", d.board_temp_c, "---");
+  show("tWater", d.water_temp_c, "---"); show("tCpu", d.jetson_cpu_c, "none"); show("tGpu", d.jetson_gpu_c, "none");
 }
 setInterval(drawTemps, 500);
 drawTemps();
@@ -405,39 +395,6 @@ function drawSent() {
   btn.textContent = off ? "Enable joystick" : "Disable joystick";
   btn.classList.toggle("is-off", off);
 }
-/* ===================================================================
-   LOG SPLITTER: drag the bar under the Cube log to move height between the Cube log and the Jetson log.
-   Each log stays at least LOG_MIN_PX tall. The split is remembered; double-click the bar to go back to equal.
-   =================================================================== */
-(function () {
-  const LOG_MIN_PX = 60, KEY_STEP_PX = 20, SPLIT_KEY = "rov.logSplit";
-  const bar = $("logSplit"), a = $("log"), b = $("jlog");
-  const setShare = (share) => {                        // share = fraction of the shared height given to the Cube log
-    a.style.flexGrow = share; b.style.flexGrow = 1 - share;
-    bar.setAttribute("aria-valuenow", Math.round(share * 100));
-  };
-  const moveTo = (aPx) => {                            // give the Cube log aPx pixels, the Jetson log the rest, within limits
-    const total = a.offsetHeight + b.offsetHeight;
-    if (total < 2 * LOG_MIN_PX) return;
-    const clamped = Math.min(total - LOG_MIN_PX, Math.max(LOG_MIN_PX, aPx));
-    setShare(clamped / total);
-    try { localStorage.setItem(SPLIT_KEY, String(clamped / total)); } catch (e) {}
-  };
-  let saved = 0.5;
-  try { const v = parseFloat(localStorage.getItem(SPLIT_KEY)); if (v > 0 && v < 1) saved = v; } catch (e) {}
-  setShare(saved);
-
-  let startY = 0, startA = 0;
-  bar.addEventListener("pointerdown", (e) => { startY = e.clientY; startA = a.offsetHeight; bar.setPointerCapture(e.pointerId); bar.classList.add("dragging"); e.preventDefault(); });
-  bar.addEventListener("pointermove", (e) => { if (bar.classList.contains("dragging")) moveTo(startA + e.clientY - startY); });
-  bar.addEventListener("mousedown", (e) => e.preventDefault());     // stops a drag or double-click from selecting text in the panel
-  ["pointerup", "pointercancel"].forEach((t) => bar.addEventListener(t, () => bar.classList.remove("dragging")));
-  bar.addEventListener("dblclick", () => { setShare(0.5); try { localStorage.removeItem(SPLIT_KEY); } catch (e) {} });
-  bar.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); moveTo(a.offsetHeight + (e.key === "ArrowDown" ? KEY_STEP_PX : -KEY_STEP_PX)); }
-  });
-})();
-
 $("joyBtn").onclick = () => backend.set_joystick_enabled(backend.get_data().joystick_enabled === false);
 setInterval(drawSent, 100);
 drawSent();
@@ -621,7 +578,19 @@ setInterval(pollLog, 300);
    Stopping the cameras is allowed whenever we are connected and they are not already stopped, so a half-started script can always be restarted.
    =================================================================== */
 function drawJetson() {
-  const j = backend.get_data().jetson || { ssh: "disconnected", cameras: "unknown" };
+  const d = backend.get_data();
+  const j = d.jetson || { ssh: "disconnected", cameras: "unknown" };
+  const cameraUrls = d.jetson_camera_urls;
+  if (Array.isArray(cameraUrls) && cameraUrls.length === SOURCES.length) {
+    let changed = false;
+    cameraUrls.forEach((url, i) => {
+      if (typeof url === "string" && SOURCES[i].url !== url) {
+        SOURCES[i].url = url;
+        changed = true;
+      }
+    });
+    if (changed) render();
+  }
   const linked = j.ssh === "connected";
   setText($("jConnText"), SSH_TEXT[j.ssh] || j.ssh);
   $("jDot").className = "dot " + (SSH_DOT[j.ssh] || "");
@@ -632,10 +601,25 @@ function drawJetson() {
   $("jCamDot").className = "dot " + (CAM_DOT[cam] || "");
   $("jStart").disabled = !linked || cam === "running" || cam === "starting" || cam === "stopping";
   $("jStop").disabled = !linked || cam === "stopped" || cam === "stopping";
+  const fanMode = j.fan_mode || "auto";
+  const fanModeValue = fanMode.replace(/^(setting_|failed_)/, "");
+  const fanModeText = {
+    auto: "Automatic (Jetson)", manual: "Manual",
+    setting_auto: "Switching to Auto...", setting_manual: "Switching to Manual...",
+    failed_auto: "Auto mode failed", failed_manual: "Manual mode failed"
+  };
+  $("jFanMode").value = fanModeValue === "manual" ? "manual" : "auto";
+  $("jFanMode").disabled = !linked || fanMode.startsWith("setting_");
+  setText($("jFanModeText"), fanModeText[fanMode] || "Fan mode unknown");
+  $("jFan").disabled = !linked || fanMode !== "manual";
+  $("jFanSet").disabled = !linked || fanMode !== "manual";
 }
 $("jConn").onclick = () => { if ((backend.get_data().jetson || {}).ssh === "connected") backend.jetson_disconnect(); else backend.jetson_connect(); };
 $("jStart").onclick = () => backend.jetson_start_cameras();
 $("jStop").onclick = () => backend.jetson_stop_cameras();
+$("jFanMode").onchange = (e) => backend.jetson_set_fan_mode(e.target.value, Number($("jFan").value));
+$("jFan").oninput = (e) => setText($("jFanValue"), e.target.value + "%");
+$("jFanSet").onclick = () => backend.jetson_set_fan_speed(Number($("jFan").value));
 setInterval(drawJetson, 200);
 drawJetson();
 
