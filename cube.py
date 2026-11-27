@@ -14,6 +14,7 @@ HOW TO USE IT IN ANY OTHER FILE
 
     data = cube.get_data()                           # a dictionary, safe to call from anywhere, any time
     data["armed"], data["mode"], data["roll"], data["depth"], data["accel_z"] ...
+    data["water_temp_c"], data["board_temp_c"]       # Bar30 (water) temperature vs Cube (enclosure) temperature
 
     cube.set_manual(surge, sway, heave, yaw, roll)   # sticks, each -1 to +1 (heave + = up)
     cube.set_relay(0, True)                          # relay 1 on (relays are 0 to 3)
@@ -29,6 +30,13 @@ The Cube object runs two threads of its own, so nothing in your program waits fo
    reader   - the ONLY place that reads from the Cube; it keeps the newest value of every message
    control  - once a second sends the heartbeat, 30 times a second sends your sticks, and does housekeeping
 Every method you call returns immediately (True = sent, False = could not send).
+
+DEPTH SOURCES (depth_source in cube_settings.json)
+-------------
+   ekf     - LOCAL_POSITION_NED.z: the EKF depth ArduSub itself uses for ALT_HOLD. Works without GPS. (default)
+   ahrs2   - AHRS2.altitude: the backup (DCM) estimate, close to the raw primary barometer
+   vfr_hud - VFR_HUD.alt: needs a global position (GPS / EKF origin), stays 0 on an ROV without one
+   bar30   - computed here from the Bar30 pressure; call zero_bar30() at the surface first
 """
 import json
 import math
@@ -50,15 +58,17 @@ MODE_ALIASES = {"DEPTH_HOLD": "ALT_HOLD", "DEPTHHOLD": "ALT_HOLD"}
 
 MG_TO_MS2 = 0.00980665                           # the IMU reports milli-g
 NEUTRAL = (0.0, 0.0, 0.0, 0.0, 0.0)              # surge, sway, heave, yaw, roll
+DEPTH_SOURCES = ("ekf", "ahrs2", "vfr_hud", "bar30")
 
 DEFAULT_SETTINGS = {
     "control_rate_hz": 30, "neutral_timeout_s": 0.5, "stale_after_s": 2.0, "link_timeout_s": 3.0,
     "mode_confirm_timeout_s": 3.0, "send_roll": True, "sync_relays_on_connect": True,
-    "disarm_on_link_loss": True, "depth_source": "vfr_hud", "bar30_message": 2, "water_density": 997,
+    "disarm_on_link_loss": True, "depth_source": "ekf", "bar30_message": 3, "water_density": 997,
     "allowed_modes": ["MANUAL", "STABILIZE", "ALT_HOLD", "SURFACE"],
-    "telemetry_rates_hz": {"ATTITUDE": 10, "VFR_HUD": 5, "AHRS2": 5, "SCALED_PRESSURE": 1,
-                           "SCALED_PRESSURE2": 2, "SCALED_PRESSURE3": 1, "SCALED_IMU": 10,
-                           "SCALED_IMU2": 10, "SYS_STATUS": 2, "SERVO_OUTPUT_RAW": 5, "RC_CHANNELS": 5},
+    "telemetry_rates_hz": {"ATTITUDE": 10, "VFR_HUD": 5, "AHRS2": 5, "LOCAL_POSITION_NED": 5,
+                           "SCALED_PRESSURE": 1, "SCALED_PRESSURE2": 1, "SCALED_PRESSURE3": 5,
+                           "SCALED_IMU": 10, "SCALED_IMU2": 10, "SYS_STATUS": 2, "SERVO_OUTPUT_RAW": 5,
+                           "RC_CHANNELS": 5},
 }
 
 # Every key that get_data() returns. A value is None when it is unknown or older than stale_after_s.
@@ -66,8 +76,8 @@ DATA_KEYS = (
     "attached", "connected", "firmware",
     "armed", "mode", "mode_id", "mode_request",
     "roll", "pitch", "yaw", "heading", "roll_rate", "pitch_rate", "yaw_rate",
-    "depth", "depth_vfr", "depth_ahrs", "depth_bar30", "climb",
-    "pressure_hpa", "pressure_temp_c", "water_temp_c",
+    "depth", "depth_ekf", "depth_vfr", "depth_ahrs", "depth_bar30", "climb",
+    "pressure_hpa", "pressure_temp_c", "water_temp_c", "board_temp_c",
     "press1_hpa", "press1_temp_c", "press2_hpa", "press2_temp_c", "press3_hpa", "press3_temp_c",
     "accel_x", "accel_y", "accel_z",
     "battery_v", "battery_a", "battery_pct",
@@ -94,8 +104,8 @@ def load_settings(path=SETTINGS_FILE):
     rates.update(user.get("telemetry_rates_hz", {}))
     settings["telemetry_rates_hz"] = rates
 
-    if settings["depth_source"] not in ("vfr_hud", "ahrs2", "bar30"):
-        raise ValueError("depth_source must be 'vfr_hud', 'ahrs2' or 'bar30'")
+    if settings["depth_source"] not in DEPTH_SOURCES:
+        raise ValueError(f"depth_source must be one of: {', '.join(DEPTH_SOURCES)}")
     if settings["bar30_message"] not in (1, 2, 3):
         raise ValueError("bar30_message must be 1, 2 or 3 (SCALED_PRESSURE, SCALED_PRESSURE2, SCALED_PRESSURE3)")
     for mode in settings["allowed_modes"]:
@@ -247,23 +257,30 @@ class Cube:
             vfr = fresh("VFR_HUD")
             if vfr is not None:
                 d["heading"] = vfr.heading
-                d["depth_vfr"] = -vfr.alt            # ArduSub reports altitude (negative under water)
+                d["depth_vfr"] = -vfr.alt            # needs a global position: stays 0 without GPS / EKF origin
                 d["climb"] = vfr.climb
             ahrs = fresh("AHRS2")
             if ahrs is not None:
                 d["depth_ahrs"] = -ahrs.altitude
+            lpos = fresh("LOCAL_POSITION_NED")
+            if lpos is not None:
+                d["depth_ekf"] = lpos.z              # NED: z positive = down = deeper
 
             presses = {1: fresh("SCALED_PRESSURE"), 2: fresh("SCALED_PRESSURE2"), 3: fresh("SCALED_PRESSURE3")}
             for n, p in presses.items():
                 if p is not None:
                     d[f"press{n}_hpa"], d[f"press{n}_temp_c"] = p.press_abs, p.temperature / 100
-            chosen = presses[s["bar30_message"]]
+            board = presses[1] or presses[2]         # the internal baros: temperature inside the enclosure
+            if board is not None:
+                d["board_temp_c"] = board.temperature / 100
+            chosen = presses[s["bar30_message"]]     # the external Bar30 (message 3 on a Cube Orange)
             if chosen is not None:
                 d["pressure_hpa"], d["pressure_temp_c"] = chosen.press_abs, chosen.temperature / 100
                 d["water_temp_c"] = chosen.temperature / 100
                 if self._zero_pressure is not None:
                     d["depth_bar30"] = (chosen.press_abs - self._zero_pressure) * 100 / (s["water_density"] * 9.80665)
-            d["depth"] = {"vfr_hud": d["depth_vfr"], "ahrs2": d["depth_ahrs"], "bar30": d["depth_bar30"]}[s["depth_source"]]
+            d["depth"] = {"ekf": d["depth_ekf"], "vfr_hud": d["depth_vfr"], "ahrs2": d["depth_ahrs"],
+                          "bar30": d["depth_bar30"]}[s["depth_source"]]
 
             imu = fresh("SCALED_IMU")
             if imu is None:
@@ -431,9 +448,8 @@ class Cube:
         surge, sway, heave, yaw, roll = values
         x, y, z, r = round(surge * 1000), round(sway * 1000), round(500 + heave * 500), round(yaw * 1000)
         if self._s["send_roll"]:
-            t = roll * 1000
             return self._send(lambda m: m.mav.manual_control_send(ap[0], x, y, z, r, 0,
-                                                                  enabled_extensions=2,s=0, t=round(roll * 1000)))
+                                                                  enabled_extensions=2, s=0, t=round(roll * 1000)))
         return self._send(lambda m: m.mav.manual_control_send(ap[0], x, y, z, r, 0))
 
     def _request_telemetry(self):

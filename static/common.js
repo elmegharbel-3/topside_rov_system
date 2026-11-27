@@ -50,7 +50,7 @@ function buildNav() {
    url: null  = placeholder picture, so the page works with no cameras at all.
    =================================================================== */
 const SOURCES = [
-  { name: "Camera 1", url: "http://localhost:8000/?action=stream" },
+  { name: "Camera 1", url: "127.0.0.1:8000" },
   { name: "Camera 2", url: "127.0.0.1:8000" },
   { name: "Camera 3", url: "127.0.0.1:8000" },
   { name: "Camera 4", url: "127.0.0.1:8000" },

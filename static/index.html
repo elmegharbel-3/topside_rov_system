@@ -122,7 +122,8 @@
       </div>
       <canvas class="attitude" id="attitude" width="480" height="96" role="img" aria-label="Attitude and depth"></canvas>
       <div class="temps" aria-label="Temperatures">
-        <div class="temp"><span class="k">Water</span><span class="v" id="tWater">---</span></div>
+        <div class="temp"><span class="k">water</span><span class="v" id="tWater">---</span></div>
+        <div class="temp"><span class="k">cube</span><span class="v" id="tCube">---</span></div>
         <div class="temp"><span class="k">Jetson CPU</span><span class="v" id="tCpu">none</span></div>
         <div class="temp"><span class="k">Jetson GPU</span><span class="v" id="tGpu">none</span></div>
       </div>
@@ -370,7 +371,7 @@ drawControls();
 function drawTemps() {
   const d = backend.get_data();
   const show = (id, v, none) => { const el = $(id); el.textContent = v == null ? none : v.toFixed(1) + " °C"; el.classList.toggle("none", v == null); };
-  show("tWater", d.water_temp_c, "---"); show("tCpu", d.jetson_cpu_c, "none"); show("tGpu", d.jetson_gpu_c, "none");
+  show("tWater", d.water_temp_c, "---"); show("tCpu", d.jetson_cpu_c, "none"); show("tGpu", d.jetson_gpu_c, "none");  show("tCube", d.board_temp_c, "---");
 }
 setInterval(drawTemps, 500);
 drawTemps();

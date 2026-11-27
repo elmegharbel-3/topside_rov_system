@@ -30,7 +30,7 @@ const MODES = ["MANUAL", "STABILIZE", "ALT_HOLD", "SURFACE"];      // = allowed_
    Live data arrives as a stream (Server-Sent Events) and is kept here, so get_data() answers at once.
    Commands are POSTs; they return at once and the REAL state comes back through the stream, like with the mock.
    =================================================================== */
-const NO_DATA = { connected: false, armed: null, mode: null, mode_request: null, roll: null, pitch: null, yaw: null, depth: null,
+const NO_DATA = { connected: false, armed: null, mode: null, mode_request: null, roll: null, pitch: null, yaw: null, depth: null,depth_ekf: null,board_temp_c: null,
                   water_temp_c: null, jetson_cpu_c: null, jetson_gpu_c: null, sent: null, joystick_enabled: null, joystick_connected: null,
                   motors: null, jetson: { ssh: "disconnected", cameras: "unknown" } };
 class RemoteBackend {

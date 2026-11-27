@@ -85,7 +85,6 @@ html, body { height: 100%; }
 body {
   background: linear-gradient(rgba(0,0,0,0.4),rgba(0,0,0,0.4)),url(purple_4.png); 
   color: var(--text); overflow: hidden;
-  font: 16px/1.35 var(--font);
   font-size: 13px;
   font-family: BBH;
   display: flex;
@@ -120,7 +119,7 @@ button, select { font: inherit; color: inherit; letter-spacing: inherit; }
 .dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--dim); flex: none; }
 .dot.wait { border-color: var(--amber); border-style: dashed; }
 .dot.on { background: var(--text); border-color: var(--text); }
-.dot.bad { background: var(--alert); border-color: var(--alert); }
+.dot.bad { background: var(--green); border-color: var(--green); }
 
 /* small buttons and a "dot + text" state */
 .jbtn { flex: none; height: 28px; padding: 0 10px; font-size: 12px; background: var(--inset-bg); border: var(--border-w) solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
@@ -137,6 +136,9 @@ button, select { font: inherit; color: inherit; letter-spacing: inherit; }
 .log .warn { color: var(--amber); }
 .log .err { color: var(--alert); }
 
+.v {
+  color: white;
+}
 @media (max-width: 900px) {
   body { overflow: auto; }
   .app { height: auto; }
