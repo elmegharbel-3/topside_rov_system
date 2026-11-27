@@ -82,7 +82,7 @@ html[data-mode="light"] {
   --border-w: 1px;         /* border width of buttons and log boxes */
   --page-bg: var(--page);  /* page background: can also be a gradient or an image */
   --panel-bg: var(--box);  /* background of camera boxes, side panel, sub-pages */
-  --inset-bg: var(--box-dark); /* background of buttons, inputs, log boxes */
+  --inset-bg: ; /* background of buttons, inputs, log boxes */
   --brand-size: 12px;      /* size of the title */
 }
 * { box-sizing: border-box; margin: 0; }

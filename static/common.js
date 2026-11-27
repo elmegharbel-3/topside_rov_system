@@ -55,10 +55,10 @@ function buildNav() {
    url: null  = placeholder picture, so the page works with no cameras at all.
    =================================================================== */
 const SOURCES = [
-  { name: "Camera 1", url: "water_1.webp" },
-  { name: "Camera 2", url: "water_2.jpg" },
-  { name: "Camera 3", url: "water_3.jpg" },
-  { name: "Camera 4", url: "water_4.jpg" },
+  { name: "Camera 1", url: "http://192.168.137.132:8081/stream" },
+  { name: "Camera 2", url: "http://192.168.137.132:8082/stream" },
+  { name: "Camera 3", url: "http://192.168.137.132:8083/stream" },
+  { name: "Camera 4", url: "http://192.168.137.132:8084/stream" },
 ];
 const RETRY_MS = 3000;                       // how often a dead stream is retried
 const STORAGE_KEY = "rov.cameraSlots";       // remembers which camera is in which box after a reload
