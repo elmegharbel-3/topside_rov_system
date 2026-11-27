@@ -14,14 +14,27 @@
 /* right panel */
 .side { background: var(--transp-bg); border-radius: var(--radius); padding: 14px; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
 .side > * { flex: none; }
-.side .log { flex: 1 1 90px; min-height: 90px; margin-top: 12px; }
+
+/* ===================================================================
+   THE TWO LOGS: the only things in the panel that change height.
+   Everything else keeps its own size; the two logs share whatever height is left.
+   They start equal (flex-grow 1 : 1). Dragging the bar between them (or arrow keys on it) moves height from one to
+   the other; the script stores the split as two flex-grow numbers. LOG_MIN_PX (script) = the smallest a log can get.
+   =================================================================== */
+.side .log { flex: 1 1 0; min-height: 60px; }        /* min-height here = the same safety limit as LOG_MIN_PX */
+.side #log { margin-top: 12px; }
+.splitter { flex: none; height: 12px; margin: 2px 0; cursor: row-resize; display: flex; align-items: center; justify-content: center; touch-action: none; }
+.splitter::before { content: ""; width: 44px; height: 4px; border-radius: 2px; background: var(--line); transition: background .15s, width .15s; }
+.splitter:hover::before, .splitter.dragging::before, .splitter:focus-visible::before { background: var(--text); width: 64px; }
+.splitter:focus-visible { outline: none; }
 
 /* ===================================================================
    STEP 8: JETSON PANEL (under the Cube log): SSH connection, camera script, its own log
+   display: contents = the section's rows and log sit directly in the side panel, so the Jetson log can share
+   height with the Cube log.
    =================================================================== */
-.jetson { margin-top: 10px; display: grid; gap: 6px; }
-.jrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 28px; }
-.side .log.jlog { flex: none; height: 76px; min-height: 0; margin-top: 0; }
+.jetson { display: contents; }
+.jrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 28px; margin-bottom: 6px; }
 
 /* ===================================================================
    STEP 2: CAMERAS
@@ -36,7 +49,8 @@
 .slot { position: relative; background: var(--transp-bg); border-radius: var(--radius); overflow: hidden; min-height: 0; min-width: 0; cursor: pointer; }
 .slot:hover { outline: 2px solid var(--text); outline-offset: -2px; }
 .slot.focused:hover { outline-color: var(--line); }
-.slot canvas, .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--transp-bg); }
+.slot canvas, .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.slot img { background: var(--letterbox); }     /* the img only shows while a stream is live, so a live box is fully opaque */
 .slot img { display: none; }
 
 /* the dropdown: small, and only visible while the mouse is over the picture (or it has keyboard focus) */
@@ -137,6 +151,7 @@
       </div>
       <canvas class="motors" id="motors" width="480" height="132" role="img" aria-label="Motor outputs"></canvas>
       <div class="log" id="log" role="log" aria-live="polite" aria-label="Cube log"><div class="none">No messages yet</div></div>
+      <div class="splitter" id="logSplit" role="separator" aria-orientation="horizontal" aria-label="Resize the Cube and Jetson logs" tabindex="0" title="Drag to resize the logs, double-click to make them equal"></div>
       <section class="jetson" aria-label="Jetson Nano">
         <div class="jrow">
           <button class="jbtn" id="jConn" type="button">Connect to Jetson</button>
@@ -390,6 +405,39 @@ function drawSent() {
   btn.textContent = off ? "Enable joystick" : "Disable joystick";
   btn.classList.toggle("is-off", off);
 }
+/* ===================================================================
+   LOG SPLITTER: drag the bar under the Cube log to move height between the Cube log and the Jetson log.
+   Each log stays at least LOG_MIN_PX tall. The split is remembered; double-click the bar to go back to equal.
+   =================================================================== */
+(function () {
+  const LOG_MIN_PX = 60, KEY_STEP_PX = 20, SPLIT_KEY = "rov.logSplit";
+  const bar = $("logSplit"), a = $("log"), b = $("jlog");
+  const setShare = (share) => {                        // share = fraction of the shared height given to the Cube log
+    a.style.flexGrow = share; b.style.flexGrow = 1 - share;
+    bar.setAttribute("aria-valuenow", Math.round(share * 100));
+  };
+  const moveTo = (aPx) => {                            // give the Cube log aPx pixels, the Jetson log the rest, within limits
+    const total = a.offsetHeight + b.offsetHeight;
+    if (total < 2 * LOG_MIN_PX) return;
+    const clamped = Math.min(total - LOG_MIN_PX, Math.max(LOG_MIN_PX, aPx));
+    setShare(clamped / total);
+    try { localStorage.setItem(SPLIT_KEY, String(clamped / total)); } catch (e) {}
+  };
+  let saved = 0.5;
+  try { const v = parseFloat(localStorage.getItem(SPLIT_KEY)); if (v > 0 && v < 1) saved = v; } catch (e) {}
+  setShare(saved);
+
+  let startY = 0, startA = 0;
+  bar.addEventListener("pointerdown", (e) => { startY = e.clientY; startA = a.offsetHeight; bar.setPointerCapture(e.pointerId); bar.classList.add("dragging"); e.preventDefault(); });
+  bar.addEventListener("pointermove", (e) => { if (bar.classList.contains("dragging")) moveTo(startA + e.clientY - startY); });
+  bar.addEventListener("mousedown", (e) => e.preventDefault());     // stops a drag or double-click from selecting text in the panel
+  ["pointerup", "pointercancel"].forEach((t) => bar.addEventListener(t, () => bar.classList.remove("dragging")));
+  bar.addEventListener("dblclick", () => { setShare(0.5); try { localStorage.removeItem(SPLIT_KEY); } catch (e) {} });
+  bar.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") { e.preventDefault(); moveTo(a.offsetHeight + (e.key === "ArrowDown" ? KEY_STEP_PX : -KEY_STEP_PX)); }
+  });
+})();
+
 $("joyBtn").onclick = () => backend.set_joystick_enabled(backend.get_data().joystick_enabled === false);
 setInterval(drawSent, 100);
 drawSent();

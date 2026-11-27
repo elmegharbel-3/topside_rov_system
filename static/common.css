@@ -26,7 +26,10 @@
   --title: #FFF;        /* the "Overflow Robotics" title */
   --alert: #ff6b57;        /* problems: red text, bad dots, disarm button border */
   --amber: #f2b544;        /* warnings, armed dot, hold-to-arm bar */
-  --letterbox: #404040;    /* bars around a camera picture that does not fill its box */
+  --letterbox: #000;       /* solid fill behind a live camera picture (so the stream shows at 100%, no background through it) */
+  --transp-bg: rgba(10, 8, 16, .35);   /* see-through panels over the background image (side panel, empty camera boxes) */
+  --switch-off: #3a3a44;   /* light-mode switch: track when off */
+  --switch-on: #9d6bff;    /* light-mode switch: track when on */
   --scrim: rgba(0, 0, 0, .78);   /* small labels drawn over a camera picture */
   --on-light: #000;        /* text on a button filled with --text */
   --focus: #fff;  
@@ -54,7 +57,9 @@ html[data-mode="light"] {
   --title: #c01515;
   --alert: #c0392b;
   --amber: #b86e00;
-  --letterbox: #d5d9dd;
+  --letterbox: #111;
+  --transp-bg: rgba(255, 255, 255, .55);
+  --switch-off: #c7cbd0;
   --scrim: rgba(255, 255, 255, .85);
   --on-light: #fff;
   --focus: #15181b;
@@ -103,8 +108,15 @@ button, select { font: inherit; color: inherit; letter-spacing: inherit; }
 .mid_head{display: flex; max-height: 30px; justify-content: center; align-items: center;gap: 10px;}
 .mid_head img {max-height: 25px;}
 .nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; align-items: center; justify-content: flex-start; padding-left: 20px;}
-.modebtn { margin:auto 0 auto auto; font-size: 11px; background: var(--inset-bg); border: var(--border-w) solid var(--line); border-radius: var(--radius-sm); padding: 3px 8px; cursor: pointer; }
-.modebtn:hover { border-color: var(--text); }
+/* light-mode switch (iOS style): the track is the button, the knob is ::after. aria-checked="true" = light mode on */
+.modebtn { justify-self: end; position: relative; width: 40px; height: 22px; padding: 0; border: none; border-radius: 999px;
+  background: var(--switch-off); font-size: 0; cursor: pointer; transition: background .25s ease; }
+.modebtn::after { content: "☾"; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; color: #555; font: 11px/18px system-ui, sans-serif; text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .25s cubic-bezier(.3, 1.4, .5, 1); }
+.modebtn[aria-checked="true"] { background: var(--switch-on); }
+.modebtn[aria-checked="true"]::after { content: "☀"; color: #c98a00; transform: translateX(18px); }
+.modebtn:hover { filter: brightness(1.12); }
 .nav a, .nav span { color: var(--dim); text-decoration: none; padding: 1px 0; border-bottom: 1px solid transparent; }
 .nav a:hover { color: var(--text); border-bottom-color: var(--dim); }
 .nav [aria-current="page"] { color: var(--text); border-bottom-color: var(--text); }
@@ -119,7 +131,7 @@ button, select { font: inherit; color: inherit; letter-spacing: inherit; }
 .dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--dim); flex: none; }
 .dot.wait { border-color: var(--amber); border-style: dashed; }
 .dot.on { background: var(--text); border-color: var(--text); }
-.dot.bad { background: var(--green); border-color: var(--green); }
+.dot.bad { background: var(--alert); border-color: var(--alert); }
 
 /* small buttons and a "dot + text" state */
 .jbtn { flex: none; height: 28px; padding: 0 10px; font-size: 12px; background: var(--inset-bg); border: var(--border-w) solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }

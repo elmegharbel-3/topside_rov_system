@@ -39,8 +39,13 @@ function buildNav() {
   });
   // dark / light button at the right end of the top bar (the page reloads so the canvases pick up the new colors)
   const btn = document.createElement("button"); btn.type = "button"; btn.className = "modebtn";
-  btn.textContent = MODE === "dark" ? "Light mode" : "Dark mode"; btn.title = "Switch between the dark and light look";
-  btn.onclick = () => { try { localStorage.setItem("rov-mode", MODE === "dark" ? "light" : "dark"); } catch (e) {} location.reload(); };
+  btn.setAttribute("role", "switch"); btn.setAttribute("aria-checked", String(MODE === "light"));
+  btn.textContent = "Light mode"; btn.title = "Light mode";
+  btn.onclick = () => {                      // slide the knob first, then reload once the animation has played
+    btn.setAttribute("aria-checked", String(MODE !== "light"));
+    try { localStorage.setItem("rov-mode", MODE === "dark" ? "light" : "dark"); } catch (e) {}
+    setTimeout(() => location.reload(), reduceMotion ? 0 : 250);
+  };
   nav.parentElement.append(btn);
 }
 
@@ -50,10 +55,10 @@ function buildNav() {
    url: null  = placeholder picture, so the page works with no cameras at all.
    =================================================================== */
 const SOURCES = [
-  { name: "Camera 1", url: "127.0.0.1:8000" },
-  { name: "Camera 2", url: "127.0.0.1:8000" },
-  { name: "Camera 3", url: "127.0.0.1:8000" },
-  { name: "Camera 4", url: "127.0.0.1:8000" },
+  { name: "Camera 1", url: "water_1.webp" },
+  { name: "Camera 2", url: "water_2.jpg" },
+  { name: "Camera 3", url: "water_3.jpg" },
+  { name: "Camera 4", url: "water_4.jpg" },
 ];
 const RETRY_MS = 3000;                       // how often a dead stream is retried
 const STORAGE_KEY = "rov.cameraSlots";       // remembers which camera is in which box after a reload
