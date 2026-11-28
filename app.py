@@ -336,7 +336,7 @@ class JetsonLink:
             if self._ssh != "connected" or self._cameras in ("running", "starting", "stopping"):
                 return False
             if not self._settings["start_cmd"]:
-                self._log.add("Cameras: no start_cmd in app_settings.json")
+                self._l1fog.add("Cameras: no start_cmd in app_settings.json")
                 return False
             self._cameras, gen = "starting", self._generation
         self._log.add("Cameras: start command sent")
