@@ -8,23 +8,33 @@
    (the choice is remembered). Every color on every page comes from these variables, so to recolor something
    change it HERE, in both blocks. Layout never changes between modes.
    --------------------------------------------------------------------------- */
+  @font-face {
+  font-family: 'BBH'; /* Give your font a name */
+  src: url('./fonts/BBHBogle-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap; /* Keeps text visible while the font loads */
+}
 :root {
   color-scheme: dark;
   --page: #000;            /* page background */
-  --box: #404040;          /* camera boxes, side panel, sub-pages */
-  --box-dark: #2b2b2b;     /* buttons, selects, log boxes */
+  --box: #4040404d;          /* camera boxes, side panel, sub-pages */
+  --box-dark: #2b2b2bde;     /* buttons, selects, log boxes */
   --line: #6a6a6a;         /* borders and dividers */
   --text: #C4A4DA;            /* main text, on-dots, canvas outlines */
   --dim: #b5b5b5;          /* secondary text, hollow dots */
   --title: #FFF;        /* the "Overflow Robotics" title */
   --alert: #ff6b57;        /* problems: red text, bad dots, disarm button border */
   --amber: #f2b544;        /* warnings, armed dot, hold-to-arm bar */
-  --letterbox: #404040;    /* bars around a camera picture that does not fill its box */
+  --letterbox: #000;       /* solid fill behind a live camera picture (so the stream shows at 100%, no background through it) */
+  --transp-bg: rgba(10, 8, 16, .35);   /* see-through panels over the background image (side panel, empty camera boxes) */
+  --switch-off: #3a3a44;   /* light-mode switch: track when off */
+  --switch-on: #9d6bff;    /* light-mode switch: track when on */
   --scrim: rgba(0, 0, 0, .78);   /* small labels drawn over a camera picture */
   --on-light: #000;        /* text on a button filled with --text */
   --focus: #fff;  
   --top-bar-h: 30px;
-  --top-bar-bg:#84009b66;       /* keyboard focus ring */
+  --top-bar-bg:#30193b;       /* keyboard focus ring */
 
   /* colors used inside the canvas drawings (attitude, depth, motors) */
   --c-line: #6a6a6a;       /* rings and thin lines */
@@ -47,7 +57,9 @@ html[data-mode="light"] {
   --title: #c01515;
   --alert: #c0392b;
   --amber: #b86e00;
-  --letterbox: #d5d9dd;
+  --letterbox: #111;
+  --transp-bg: rgba(255, 255, 255, .55);
+  --switch-off: #c7cbd0;
   --scrim: rgba(255, 255, 255, .85);
   --on-light: #fff;
   --focus: #15181b;
@@ -78,7 +90,8 @@ html, body { height: 100%; }
 body {
   background: linear-gradient(rgba(0,0,0,0.4),rgba(0,0,0,0.4)),url(purple_4.png); 
   color: var(--text); overflow: hidden;
-  font: 13px/1.35 var(--font);
+  font-size: 13px;
+  font-family: BBH;
   display: flex;
   flex-direction: column;
 }
@@ -90,15 +103,23 @@ button, select { font: inherit; color: inherit; letter-spacing: inherit; }
 
 /* the top bar: title on the left, links to the other pages (each opens in a new tab) */
 .topbar { flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  padding: 3px var(--gap); background: var(--top-bar-bg); border-bottom: var(--border-w) solid var(--line);}
-.brand { font: 400 var(--brand-size)/1 var(--font); color: var(--title); }
-.nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 12px; align-items: center; justify-content: flex-start; padding-left: 20px;}
-.modebtn { margin-left:auto; font-size: 11px; background: var(--inset-bg); border: var(--border-w) solid var(--line); border-radius: var(--radius-sm); padding: 3px 8px; cursor: pointer; }
-.modebtn:hover { border-color: var(--text); }
+  padding: 3px var(--gap); background: var(--top-bar-bg); border-bottom: var(--border-w) solid var(--line); height: 30px;}
+.brand { font: 400 22px BBH; color: var(--title);}
+.mid_head{display: flex; max-height: 30px; justify-content: center; align-items: center;gap: 10px;}
+.mid_head img {max-height: 25px;}
+.nav { display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; align-items: center; justify-content: flex-start; padding-left: 20px;}
+/* light-mode switch (iOS style): the track is the button, the knob is ::after. aria-checked="true" = light mode on */
+.modebtn { justify-self: end; position: relative; width: 40px; height: 22px; padding: 0; border: none; border-radius: 999px;
+  background: var(--switch-off); font-size: 0; cursor: pointer; transition: background .25s ease; }
+.modebtn::after { content: "☾"; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; color: #555; font: 11px/18px system-ui, sans-serif; text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35); transition: transform .25s cubic-bezier(.3, 1.4, .5, 1); }
+.modebtn[aria-checked="true"] { background: var(--switch-on); }
+.modebtn[aria-checked="true"]::after { content: "☀"; color: #c98a00; transform: translateX(18px); }
+.modebtn:hover { filter: brightness(1.12); }
 .nav a, .nav span { color: var(--dim); text-decoration: none; padding: 1px 0; border-bottom: 1px solid transparent; }
 .nav a:hover { color: var(--text); border-bottom-color: var(--dim); }
 .nav [aria-current="page"] { color: var(--text); border-bottom-color: var(--text); }
-.brand { font-size: 18px;}
 
 /* a plain sub-page: one gray box under the top bar that scrolls by itself */
 .page { background: var(--panel-bg); border-radius: var(--radius); padding: 14px; overflow: auto; min-height: 0; }
@@ -120,13 +141,16 @@ button, select { font: inherit; color: inherit; letter-spacing: inherit; }
 .jstate .name { color: var(--dim); }
 
 /* log boxes (newest line on top: red = problems, amber = warnings) */
-.log { background: var(--inset-bg); border: var(--border-w) solid var(--line); border-radius: var(--radius); overflow-y: auto; padding: 6px 8px; font-size: 12px; line-height: 1.5; }
+.log { background: var(--inset-bg); border: var(--border-w) solid var(--line); border-radius: var(--radius); overflow-y: auto; padding: 6px 8px; font-size: 12px; line-height: 1.5; font-family: var(--font); }
 .log .none { color: var(--dim); }
 .log .row { display: flex; gap: 8px; }
 .log .t { color: var(--dim); flex: none; }
 .log .warn { color: var(--amber); }
 .log .err { color: var(--alert); }
 
+.v {
+  color: white;
+}
 @media (max-width: 900px) {
   body { overflow: auto; }
   .app { height: auto; }
