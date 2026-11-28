@@ -393,7 +393,7 @@ drawControls();
 function drawTemps() {
   const d = backend.get_data();
   const show = (id, v, none) => { const el = $(id); el.textContent = v == null ? none : v.toFixed(1) + " °C"; el.classList.toggle("none", v == null); };
-  show("tWater", d.water_temp_c, "---"); show("tCpu", d.jetson_cpu_c, "none"); show("tGpu", d.jetson_gpu_c, "none");  show("tCube", d.board_temp_c, "---");
+  show("tWater", d.water_temp_c, "---"); show("tCpu", d.jetson_cpu_c, "---"); show("tGpu", d.jetson_gpu_c, "---");  show("tCube", d.board_temp_c, "---");
 }
 setInterval(drawTemps, 500);
 drawTemps();
